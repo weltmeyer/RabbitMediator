@@ -197,7 +197,8 @@ public partial class RabbitMediator : IAsyncDisposable
 
     private async Task<bool> HandleRequest(IRequest request)
     {
-        Debug.Assert(_requestConsumers.TryGetValue(request.GetType().FullName!, out var consumer));
+        _requestConsumers.TryGetValue(request.GetType().FullName!, out var consumer);
+        Debug.Assert(consumer != null);
 
         var consumeMethod = consumer.GetType()
             .GetMethod(nameof(IRequestConsumer<Request<Response>, Response>.Consume))!;

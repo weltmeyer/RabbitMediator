@@ -46,8 +46,8 @@ public partial class RabbitMediator : IRabbitMediator
         var awaiter = new RequestResponseAwaiter();
         request.SenderId = InstanceId;
         request.RequestId = awaiter.RequestId;
-
-        Debug.Assert(_responseWaiters.TryAdd(awaiter.RequestId, awaiter));
+        _responseWaiters.TryAdd(awaiter.RequestId, awaiter);
+        
 
         try
         {
@@ -86,7 +86,7 @@ public partial class RabbitMediator : IRabbitMediator
             return response ?? throw new InvalidCastException();
         }
 
-        Debug.Assert(_responseWaiters.TryRemove(awaiter.RequestId, out _));
+        _responseWaiters.TryRemove(awaiter.RequestId, out _);
         //timed out
         var timedOutResponse = Activator.CreateInstance<TResponse>();
         timedOutResponse.Success = false;
@@ -149,7 +149,7 @@ public partial class RabbitMediator : IRabbitMediator
                 {
                     SentId = message.SentId,
                 };
-                Debug.Assert(_targetAckWaiters.TryAdd(targetAckAwaiter.SentId, targetAckAwaiter));
+                _targetAckWaiters.TryAdd(targetAckAwaiter.SentId, targetAckAwaiter);
             }
 
             await _serializerHelper.Serialize(message, async data =>
@@ -180,7 +180,7 @@ public partial class RabbitMediator : IRabbitMediator
         {
             _logger.LogWarning(ex, "Publishing failed");
             if (confirmPublish)
-                Debug.Assert(_targetAckWaiters.TryRemove(message.SentId, out _));
+                _targetAckWaiters.TryRemove(message.SentId, out _);
             return new SendResult { Success = false, SendFailure = true };
         }
 
