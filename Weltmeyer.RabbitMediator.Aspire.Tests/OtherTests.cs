@@ -1,7 +1,5 @@
 using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Weltmeyer.RabbitMediator.MessageBases;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
 using Weltmeyer.RabbitMediator.TestTool.Messages;

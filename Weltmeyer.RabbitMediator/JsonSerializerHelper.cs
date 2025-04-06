@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Diagnostics;
 using System.Text.Json;
 using Weltmeyer.RabbitMediator.MessageBases;
 
@@ -8,7 +7,7 @@ namespace Weltmeyer.RabbitMediator;
 internal class JsonSerializerHelper
 {
     private JsonSerializerOptions? _options;
-    private List<Type> _knownTypes = [];
+    private readonly List<Type> _knownTypes = [];
 
     private JsonSerializerOptions RebuildOptions()
     {

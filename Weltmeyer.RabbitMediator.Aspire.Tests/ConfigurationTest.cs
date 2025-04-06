@@ -1,10 +1,5 @@
-using System.Text;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using RabbitMQ.Client;
-using Weltmeyer.RabbitMediator.MessageBases;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
-using Weltmeyer.RabbitMediator.TestTool.Messages;
 
 namespace Weltmeyer.RabbitMediator.Aspire.Tests;
 
@@ -110,7 +105,7 @@ public class ConfigurationTest
         using var host = await _aspireHostFixture.PrepareHost();
 
 
-        Assert.Throws<System.UriFormatException>(() =>
+        Assert.Throws<UriFormatException>(() =>
         {
             _ = new RabbitMediator(
                 host.Services.GetRequiredService<ILogger<RabbitMediator>>(),

@@ -9,9 +9,9 @@
         <Description>Basic mediator implementation in .NET using RabbitMQ as a transport
 Implements asynchronous messaging and request/response between different hosts and processes.</Description>
         <PackageProjectUrl>https://github.com/weltmeyer/RabbitMediator</PackageProjectUrl>
-        <PackageLicenseUrl>https://github.com/weltmeyer/RabbitMediator/blob/master/LICENSE</PackageLicenseUrl>
         <RepositoryUrl>https://github.com/weltmeyer/RabbitMediator</RepositoryUrl>
         <PackageReadmeFile>NugetReadme.md</PackageReadmeFile>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
     </PropertyGroup>
     
     

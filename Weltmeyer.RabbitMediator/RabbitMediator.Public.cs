@@ -59,7 +59,7 @@ public partial class RabbitMediator : IRabbitMediator
         }
         catch (RabbitMQClientException rabbitException)
         {
-            _logger.LogWarning(rabbitException, "Publishing failed");
+            _logger?.LogWarning(rabbitException, "Publishing failed");
             _responseWaiters.TryRemove(awaiter.RequestId, out _);
             var publishErrorResponse = Activator.CreateInstance<TResponse>();
             publishErrorResponse.Success = false;
@@ -178,7 +178,7 @@ public partial class RabbitMediator : IRabbitMediator
         }
         catch (PublishException ex)
         {
-            _logger.LogWarning(ex, "Publishing failed");
+            _logger?.LogWarning(ex, "Publishing failed");
             if (confirmPublish)
                 _targetAckWaiters.TryRemove(message.SentId, out _);
             return new SendResult { Success = false, SendFailure = true };
