@@ -5,13 +5,16 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>0.0.1</Version>
+        <Version>0.0.1.1</Version>
         <Description>Basic mediator implementation in .NET using RabbitMQ as a transport
 Implements asynchronous messaging and request/response between different hosts and processes.</Description>
         <PackageProjectUrl>https://github.com/weltmeyer/RabbitMediator</PackageProjectUrl>
         <PackageLicenseUrl>https://github.com/weltmeyer/RabbitMediator/blob/master/LICENSE</PackageLicenseUrl>
         <RepositoryUrl>https://github.com/weltmeyer/RabbitMediator</RepositoryUrl>
+        <PackageReadmeFile>NugetReadme.md</PackageReadmeFile>
     </PropertyGroup>
+    
+    
 
     <ItemGroup>
       <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.3" />
@@ -23,6 +26,13 @@ Implements asynchronous messaging and request/response between different hosts a
         <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
             <_Parameter1>Weltmeyer.RabbitMediator.Aspire.Tests</_Parameter1>
         </AssemblyAttribute>
+    </ItemGroup>
+
+
+    <ItemGroup>
+      <None Update="NugetReadme.md" Pack="true" PackagePath="/">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
 </Project>
