@@ -76,7 +76,7 @@ public class ConfigurationTest
 
         var mediatorMultiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!, 10,
             customConnection: connection);
-        await mediatorMultiplexer.Configure();
+        await mediatorMultiplexer.Configure(CancellationToken.None);
         var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, [typeof(TestTargetedRequestConsumer)]);
         await mediator.Configure();
         
@@ -91,7 +91,7 @@ public class ConfigurationTest
     {
         using var host = await _aspireHostFixture.PrepareHost();
         var mediatorMultiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!, 10);
-        await mediatorMultiplexer.Configure();
+        await mediatorMultiplexer.Configure(CancellationToken.None);
         var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, [typeof(TestTargetedRequestConsumer)]);
         mediator.DefaultConfirmTimeOut = TimeSpan.FromSeconds(1);
         mediator.DefaultResponseTimeOut = TimeSpan.FromSeconds(1);
