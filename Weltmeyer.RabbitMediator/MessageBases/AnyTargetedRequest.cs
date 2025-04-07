@@ -18,9 +18,4 @@ namespace Weltmeyer.RabbitMediator.MessageBases;
 public abstract class AnyTargetedRequest<TResponse> : Request<TResponse>, IAnyTargetedSentObject
     where TResponse : Response
 {
-    [JsonInclude] public override Guid SenderId { get; internal set; }
-
-    [JsonInclude] public override Guid RequestId { get; internal set; }
-    
-    [JsonInclude] public override Guid SentId { get; internal set; }
 }

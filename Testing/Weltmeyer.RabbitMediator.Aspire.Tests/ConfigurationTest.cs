@@ -13,6 +13,7 @@ public class ConfigurationTest
     {
         _aspireHostFixture = aspireHostFixture;
     }
+
 /*
     [Fact]
     async Task RecoverConnection()
@@ -26,8 +27,8 @@ public class ConfigurationTest
         };
 
         var connection = await connectionFactory.CreateConnectionAsync();
-        
-        
+
+
         var mediator = new RabbitMediator(
             host.Services.GetRequiredService<ILogger<RabbitMediator>>(),
             [typeof(TestBroadCastMessageConsumer)],
@@ -37,7 +38,7 @@ public class ConfigurationTest
         await mediator.ConfigureBus(host.Services,connection);
 
         var channel = await connection.CreateChannelAsync(new CreateChannelOptions(true,true));
-        
+
         await Assert.ThrowsAsync<RabbitMQ.Client.Exceptions.AlreadyClosedException>(async () =>
         {
             //this crashes the channel
@@ -48,14 +49,14 @@ public class ConfigurationTest
                 new BasicProperties(),
                 Array.Empty<byte>().AsMemory(),
                 CancellationToken.None);
-            
+
         });
 
         await mediator.Send(new TestBroadcastMessage());
         var received = mediator.GetMessageConsumerInstance<TestBroadCastMessageConsumer>()!;
         Assert.Equal(1,received.ReceivedMessages);
-        
-        
+
+
         await mediator.DisposeAsync();
     }
     */
@@ -71,32 +72,32 @@ public class ConfigurationTest
         };
 
         var connection = await connectionFactory.CreateConnectionAsync();
+
+
+        var mediatorMultiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!, 10,
+            customConnection: connection);
+        await mediatorMultiplexer.Configure();
+        var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, [typeof(TestTargetedRequestConsumer)]);
+        await mediator.Configure();
         
-        
-        var mediator = new RabbitMediator(
-            host.Services.GetRequiredService<ILogger<RabbitMediator>>(),
-            [typeof(TestTargetedRequestConsumer)],
-            _aspireHostFixture.RabbitMQConnectionString!, null, 10);
         mediator.DefaultConfirmTimeOut = TimeSpan.FromSeconds(1);
         mediator.DefaultResponseTimeOut = TimeSpan.FromSeconds(1);
-        await mediator.ConfigureBus(host.Services,connection);
-        await mediator.DisposeAsync();
+        //await mediator.ConfigureBus(host.Services,connection);
+        //await mediatorMultiplexer.DisposeAsync();
     }
- 
+
     [Fact]
     async Task ConfigureBusGood()
     {
         using var host = await _aspireHostFixture.PrepareHost();
-
-        var mediator = new RabbitMediator(
-            host.Services.GetRequiredService<ILogger<RabbitMediator>>(),
-            [typeof(TestTargetedRequestConsumer)],
-            _aspireHostFixture.RabbitMQConnectionString!, null, 10);
+        var mediatorMultiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!, 10);
+        await mediatorMultiplexer.Configure();
+        var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, [typeof(TestTargetedRequestConsumer)]);
         mediator.DefaultConfirmTimeOut = TimeSpan.FromSeconds(1);
         mediator.DefaultResponseTimeOut = TimeSpan.FromSeconds(1);
-        await mediator.ConfigureBus(host.Services);
+        await mediator.Configure();
 
-        await mediator.DisposeAsync();
+        
     }
 
     [Fact]
@@ -107,10 +108,9 @@ public class ConfigurationTest
 
         Assert.Throws<UriFormatException>(() =>
         {
-            _ = new RabbitMediator(
-                host.Services.GetRequiredService<ILogger<RabbitMediator>>(),
-                [typeof(TestTargetedRequestConsumer)],
-                "notAnUrl", null, 10);
+            _ = new RabbitMediatorMultiplexer(
+                "notAnUrl"
+                );
         });
     }
 
@@ -119,15 +119,12 @@ public class ConfigurationTest
     {
         using var host = await _aspireHostFixture.PrepareHost();
 
-        var mediator = new RabbitMediator(
-            host.Services.GetRequiredService<ILogger<RabbitMediator>>(),
-            [typeof(TestTargetedRequestConsumer)],
-            "amqp://server", null, 10);
+        var mediatorMultiplexer = new RabbitMediatorMultiplexer("amqp://server");
         await Assert.ThrowsAsync<RabbitMQ.Client.Exceptions.BrokerUnreachableException>(async () =>
         {
-            await mediator.ConfigureBus(host.Services);
+            await mediatorMultiplexer.Configure();
         });
+
         
-        await mediator.DisposeAsync();
     }
 }

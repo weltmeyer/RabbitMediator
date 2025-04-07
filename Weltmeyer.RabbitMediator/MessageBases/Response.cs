@@ -5,12 +5,8 @@ namespace Weltmeyer.RabbitMediator.MessageBases;
 
 public abstract class Response : Message, ITargetedSentObject
 {
-    [JsonInclude] public Guid RequestId { get; internal set; }
-    [JsonInclude] public override Guid SenderId { get; internal set; }
-    [JsonInclude] public Guid TargetId { get; internal set; }
-    [JsonInclude] public override Guid SentId { get; internal set; }
-    [JsonInclude] public override bool RequireAck { get; internal set; }
-    
+    [JsonInclude] public InstanceInformation TargetInstance { get; internal set; }
+   
     [JsonInclude] public bool Success { get; internal set; }
     
     [JsonInclude] public ExceptionData? ExceptionData { get; internal set; }

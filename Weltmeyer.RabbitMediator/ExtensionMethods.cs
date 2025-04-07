@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Weltmeyer.RabbitMediator.ConsumerBases;
@@ -8,27 +10,26 @@ namespace Weltmeyer.RabbitMediator;
 
 public static class ExtensionMethods
 {
-
     public static void AddRabbitMediator(this IServiceCollection serviceCollection, Assembly consumerAssemby,
         string connectionString,
-        string? keyedInstanceName = null)
+        object? instanceKey = null, bool scoped = false)
     {
-        AddRabbitMediator(serviceCollection, [consumerAssemby], connectionString, keyedInstanceName);
+        AddRabbitMediator(serviceCollection, [consumerAssemby], connectionString, instanceKey, scoped);
     }
 
     public static void AddRabbitMediator(this IServiceCollection serviceCollection, Assembly[] consumerAssemblies,
         string connectionString,
-        string? keyedInstanceName = null)
+        object? instanceKey = null, bool scoped = false)
     {
         var allConsumerTypes = consumerAssemblies.SelectMany(asm => asm.GetTypes())
             .Where(t => t.IsAssignableTo(typeof(IConsumer)) && !t.IsAbstract)
             .ToArray();
-        AddRabbitMediator(serviceCollection, allConsumerTypes, connectionString, keyedInstanceName);
+        AddRabbitMediator(serviceCollection, allConsumerTypes, connectionString, instanceKey, scoped);
     }
 
-    public static void AddRabbitMediator(this IServiceCollection serviceCollection, Type[] consumerTypes,
-        string connectionString,
-        string? keyedInstanceName = null)
+
+    public static void AddRabbitMediator(this IServiceCollection serviceCollection,
+        Type[] consumerTypes, string connectionString, object? instanceKey = null, bool scoped = false)
     {
         var allConsumerTypes = consumerTypes
             .Where(t => t.IsAssignableTo(typeof(IConsumer)) && !t.IsAbstract)
@@ -41,47 +42,67 @@ public static class ExtensionMethods
                 $"These types are no consumers: {string.Join(",", missingTypes.Select(mt => mt.FullName))}");
         }
 
+        serviceCollection.Configure<RabbitMediatorWorkerConfiguration>(opt => { });
 
-        if (keyedInstanceName != null)
-        {
-            serviceCollection.AddKeyedSingleton<IRabbitMediator>(keyedInstanceName, (provider, key) =>
-            {
-                var result = new RabbitMediator(provider.GetRequiredService<ILogger<RabbitMediator>>(),
-                    consumerTypes,
-                    connectionString,
-                    key as string, 50);
+        var lifeTime = scoped ? ServiceLifetime.Scoped : ServiceLifetime.Singleton;
 
-                return result;
-            });
-        }
-        else
+        if (!serviceCollection.Any(sd =>
+                sd.ServiceType == typeof(RabbitMediatorMultiplexer) && sd.IsKeyedService == (instanceKey != null) &&
+                sd.ServiceKey == instanceKey && sd.Lifetime == lifeTime))
         {
-            serviceCollection.AddSingleton<IRabbitMediator>(provider =>
+            var multiplexerDescriptor = new ServiceDescriptor(typeof(RabbitMediatorMultiplexer), instanceKey,
+                (provider, key) =>
+                {
+                    var result = new RabbitMediatorMultiplexer(connectionString,
+                        logger: provider.GetRequiredService<ILogger<RabbitMediatorMultiplexer>>());
+                    var workerConfiguration =
+                        provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
+                    workerConfiguration.Value.PleaseConfigureMultiplexers.Writer.TryWrite(result);
+                    return result;
+                }, lifeTime);
+
+            serviceCollection.Add(multiplexerDescriptor);
+        }
+
+
+        var instanceDescriptor = new ServiceDescriptor(typeof(IRabbitMediator), instanceKey,
+            (provider, key) =>
             {
-                var result = new RabbitMediator(provider.GetRequiredService<ILogger<RabbitMediator>>(),
-                    consumerTypes, connectionString, null, 50);
-                return result;
-            });
-        }
-        
-        serviceCollection.Configure<RabbitMediatorWorkerConfiguration>(opt =>
-        {
-            opt.KeyList.Add(keyedInstanceName);
-        });
-        
+                var multiplexer = key == null
+                    ? provider.GetRequiredService<RabbitMediatorMultiplexer>()
+                    : provider.GetRequiredKeyedService<RabbitMediatorMultiplexer>(key);
+
+                var newMediator = multiplexer.CreateRabbitMediator(provider, consumerTypes);
+                var workerConfiguration =
+                    provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
+                workerConfiguration.Value.PleaseConfigureMediators.Writer.TryWrite(newMediator);
+                if (!newMediator.WaitReady(TimeSpan.FromSeconds(5)))
+                {
+                    throw new TimeoutException("Could not created mediator within time!");
+                }
+                return newMediator;
+            }, lifeTime);
+
+        serviceCollection.Add(instanceDescriptor);
+
+        AddRabbitMediatorWorker(serviceCollection);
+    }
+
+
+    private static void AddRabbitMediatorWorker(IServiceCollection serviceCollection)
+    {
         if (serviceCollection.All(sd => sd.ServiceType != typeof(RabbitMediatorWorker)))
         {
-            serviceCollection.AddHostedService<RabbitMediatorWorker>(provider =>
-            {
-                var instance = new RabbitMediatorWorker(provider,
-                    provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>());
-                return instance;
-            });
+            serviceCollection.AddHostedService<RabbitMediatorWorker>();
         }
     }
 }
 
 internal class RabbitMediatorWorkerConfiguration
 {
-    public List<string?> KeyList { get; } = new();
+    public readonly Channel<RabbitMediatorMultiplexer> PleaseConfigureMultiplexers =
+        Channel.CreateUnbounded<RabbitMediatorMultiplexer>();
+
+    public readonly Channel<MultiplexedRabbitMediator> PleaseConfigureMediators =
+        Channel.CreateUnbounded<MultiplexedRabbitMediator>();
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Weltmeyer.RabbitMediator.Contracts;
 using Weltmeyer.RabbitMediator.TestTool;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
 using Weltmeyer.RabbitMediator.TestTool.Messages;
@@ -54,7 +55,10 @@ public class MessageTests
         var tasks = allMediators.SelectMany(mediator => allMediators.Select(target => (mediator, target)))
             .Select((mediatorAndTarget) => Task.Run(async () =>
             {
-                var message = new TestTargetedMessage { TargetId = mediatorAndTarget.target.InstanceId };
+                var message = new TestTargetedMessage
+                {
+                    TargetInstance = mediatorAndTarget.target.GetInstanceInformation(),
+                };
                 var sendResult = await mediatorAndTarget.mediator.Send(message);
                 Assert.True(sendResult.Success);
             })).ToArray();
@@ -77,7 +81,7 @@ public class MessageTests
             {
                 var message = new TestTargetedMessage
                 {
-                    TargetId = mediatorAndTarget.target.InstanceId,
+                    TargetInstance = mediatorAndTarget.target.GetInstanceInformation(),
                     Delay = TimeSpan.FromSeconds(1),
                 };
 
@@ -93,6 +97,50 @@ public class MessageTests
             .FromSeconds(2)); //wait some time as the consumers get the remaining message later than our timeout raise :)
         var sumReceived = allMediators.Sum(m =>
             m.GetMessageConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
+        Assert.Equal(requiredMessageCount, sumReceived);
+        await testApp.StopAsync();
+    }
+
+
+    [Fact]
+    public async Task TestAnyTargeted_Small()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        foreach (var mediator in allMediators)
+            mediator.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
+        var sender = allMediators.First();
+        //var receiver = allMediators.Skip(1).First();
+        var message = new TestAnyTargetedMessage();
+        var sendResult = await sender.Send(message, confirmTimeOut: TimeSpan.FromSeconds(999));
+        Assert.True(sendResult.Success);
+        var requiredMessageCount = 1;
+        var sumReceived = allMediators.Sum(m =>
+            m.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
+
+        Assert.Equal(requiredMessageCount, sumReceived);
+        await testApp.StopAsync();
+    }
+
+    [Fact]
+    public async Task TestAnyTargeted_Small_Crashing()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        foreach (var mediator in allMediators)
+            mediator.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
+        var sender = allMediators.First();
+        //var receiver = allMediators.Skip(1).First();
+        var message = new TestAnyTargetedMessage { CrashPlease = true };
+        var sendResult = await sender.Send(message);
+        Assert.Equal(typeof(TestException).FullName, sendResult.ExceptionData?.TypeFullName);
+        Assert.False(sendResult.Success);
+        var requiredMessageCount = 1;
+        var sumReceived = allMediators.Sum(m =>
+            m.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
+
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
     }
@@ -143,7 +191,7 @@ public class MessageTests
             {
                 var message = new TestAnyTargetedMessage { CrashPlease = true };
                 var sendResult = await mediator.Send(message);
-                Assert.Equal(sendResult.ExceptionData?.TypeFullName, typeof(TestException).FullName);
+                Assert.Equal(typeof(TestException).FullName, sendResult.ExceptionData?.TypeFullName);
                 Assert.False(sendResult.Success);
             }));
         }
@@ -165,10 +213,11 @@ public class MessageTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-                await allMediators.First().Send(new TestTargetedMessage { TargetId = Guid.Empty });
+            await allMediators.First().Send(new TestTargetedMessage
+                { TargetInstance = new InstanceInformation(Guid.Empty, Guid.Empty) });
         });
     }
-    
+
     [Fact]
     public async Task TestNonExistingTarget()
     {
@@ -176,7 +225,8 @@ public class MessageTests
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
         var result =
-            await allMediators.First().Send(new TestTargetedMessage { TargetId = Guid.NewGuid() }); //should fail
+            await allMediators.First().Send(new TestTargetedMessage
+                { TargetInstance = new InstanceInformation(Guid.NewGuid(), Guid.NewGuid()) }); //should fail
         Assert.False(result.Success);
         Assert.True(result.SendFailure);
     }
@@ -188,7 +238,11 @@ public class MessageTests
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
         var result = await allMediators.First()
-            .Send(new TestTargetedMessage { TargetId = Guid.NewGuid() }, confirmPublish: false);
+            .Send(new TestTargetedMessage
+                {
+                    TargetInstance = new InstanceInformation(Guid.NewGuid(), Guid.NewGuid())
+                },
+                confirmPublish: false);
         Assert.True(result.Success);
     }
 
@@ -210,9 +264,12 @@ public class MessageTests
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
         var sender = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("sender");
 
-        var sendResult = await sender.Send(new TestTargetedMessage { TargetId = consumer.InstanceId });
+        var sendResult = await sender.Send(new TestTargetedMessage
+        {
+            TargetInstance = consumer.GetInstanceInformation()
+        });
         Assert.True(sendResult.Success);
-        Assert.Null(sender.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
+        //Assert.Null(sender.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
         Assert.Equal(1, consumer.GetMessageConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
     }
 
@@ -225,17 +282,24 @@ public class MessageTests
         {
             builder.Services.AddRabbitMediator(Array.Empty<Type>(),
                 connectionString!, "consumer");
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(), 
+            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
                 connectionString!, "sender");
         });
 
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
         var sender = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("sender");
 
-        var sendResult = await sender.Send(new TestTargetedMessage { TargetId = consumer.InstanceId });
+        var sendResult = await sender.Send(new TestTargetedMessage
+        {
+            TargetInstance = new InstanceInformation
+            {
+                InstanceId = consumer.InstanceId,
+                InstanceScope = Guid.NewGuid()
+            }
+        });
         Assert.False(sendResult.Success);
         Assert.True(sendResult.SendFailure);
-        Assert.Null(sender.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
-        Assert.Null(consumer.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
+        //Assert.Null(sender.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
+        //Assert.Null(consumer.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
     }
 }

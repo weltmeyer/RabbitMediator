@@ -1,4 +1,5 @@
 using Weltmeyer.RabbitMediator.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts;
 using Weltmeyer.RabbitMediator.MessageBases;
 
 namespace Weltmeyer.RabbitMediator;
@@ -9,6 +10,9 @@ public interface IRabbitMediator
     /// The id of this instance, used to identify this instance as a specific sender and receiver of messages and requests/responses 
     /// </summary>
     public Guid InstanceId { get; }
+    public Guid ScopeId { get; }
+
+    public InstanceInformation GetInstanceInformation() => new() { InstanceId = InstanceId, InstanceScope = ScopeId };
 
     public TimeSpan DefaultConfirmTimeOut { get; set; }
     public TimeSpan DefaultResponseTimeOut { get; set; }

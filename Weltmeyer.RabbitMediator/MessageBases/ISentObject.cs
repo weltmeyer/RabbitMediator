@@ -1,14 +1,12 @@
 using System.Text.Json.Serialization;
+using Weltmeyer.RabbitMediator.Contracts;
 
 namespace Weltmeyer.RabbitMediator.MessageBases;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
 internal interface ISentObject
 {
-    [JsonInclude]
-    public Guid SenderId { get;  }
-    
-    [JsonInclude]
-    public Guid SentId { get;  }
-    
+    [JsonInclude] public InstanceInformation SenderInstance { get; }
+
+    [JsonInclude] public Guid CorrelationId { get; }
 }

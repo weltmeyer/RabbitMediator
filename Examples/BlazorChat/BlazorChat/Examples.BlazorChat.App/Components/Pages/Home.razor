@@ -1,0 +1,96 @@
+﻿@page "/"
+@using Examples.BlazorChat.App.MediatorClasses.Messages
+@using Weltmeyer.RabbitMediator
+@implements IAsyncDisposable
+<PageTitle>Home</PageTitle>
+
+<h1>Hello, world!</h1>
+
+Welcome to your new app.
+
+@if (UserState.Username == null)
+{
+    <span>
+        Please select username: <input type="text" @bind-value="TestUserName"/>
+        <button @onclick="ChooseUsernameClick">Go</button>
+        @if (Error != null)
+        {
+            <hr/>
+            <div>@Error</div>
+            <hr/>
+        }
+    </span>
+}
+else
+{
+    foreach (var message in UserState.Messages.OrderByDescending(m => m.Timestamp).Take(50))
+    {
+        <div>
+            <span>@((AppState.UserList.FirstOrDefault(u => u.Key.InstanceId == @message.Instance.InstanceId && u.Key.InstanceScope == @message.Instance.InstanceScope)).Value ?? "Unknown")</span>
+            <span>@message.Timestamp</span>
+            <span>@message.Message</span>
+        </div>
+    }
+
+    <hr/>
+    <span>Your Message<input type="text" @bind-value="MessageText"/><button @onclick="SendMessage">send message</button></span>
+}
+
+@code{
+
+    [Inject] public UserState UserState { get; set; } = null!;
+
+    [Inject] public AppState AppState { get; set; } = null!;
+    [Inject] public IRabbitMediator Mediator { get; set; } = null!;
+
+    public string? TestUserName { get; set; }
+
+    public string? Error { get; set; }
+    public string? MessageText { get; set; }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            UserState.NewMessage += UserStateOnNewMessage;
+        }
+
+        return base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task UserStateOnNewMessage(object? sender, UserState.NewMessageEventArgs e)
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+
+    private async Task ChooseUsernameClick()
+    {
+        if (TestUserName == null)
+            return;
+        TestUserName = TestUserName.Trim().ToLower();
+        UserState.Username = TestUserName;
+        UserState.NewMessage += UserStateOnNewMessage;
+        MessageText = "I joined the chat :)";
+        await SendMessage();
+        return;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        UserState.NewMessage -= UserStateOnNewMessage;
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task SendMessage()
+    {
+        var sendResult = await Mediator.Send(new BroadcastChatMessage
+        {
+            Message = MessageText,
+            SenderName = UserState.Username,
+        });
+        MessageText = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+}
