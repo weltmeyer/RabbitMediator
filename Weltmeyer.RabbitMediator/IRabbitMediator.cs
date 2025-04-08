@@ -14,9 +14,6 @@ public interface IRabbitMediator
 
     public InstanceInformation GetInstanceInformation() => new() { InstanceId = InstanceId, InstanceScope = ScopeId };
 
-    public TimeSpan DefaultConfirmTimeOut { get; set; }
-    public TimeSpan DefaultResponseTimeOut { get; set; }
-
     /// <summary>
     /// Sends a request and waits for the specified response
     /// </summary>
@@ -42,10 +39,8 @@ public interface IRabbitMediator
         where TMessageType : Message;
 
 
-    T? GetRequestConsumerInstance<T>()
+    T? GetConsumerInstance<T>()
         where T : IConsumer;
 
-    T? GetMessageConsumerInstance<T>()
-        where T : IConsumer;
 
 }

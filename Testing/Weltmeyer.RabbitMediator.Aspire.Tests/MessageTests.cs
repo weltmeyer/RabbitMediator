@@ -27,7 +27,7 @@ public class MessageTests
 
         var tasks = new List<Task>();
         foreach (var mediator in allMediators)
-            mediator.GetMessageConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages = 0;
         foreach (var mediator in allMediators)
         {
             tasks.Add(Task.Run(async () =>
@@ -42,7 +42,7 @@ public class MessageTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length * allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages);
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
     }
@@ -66,7 +66,7 @@ public class MessageTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length * allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
     }
@@ -96,7 +96,7 @@ public class MessageTests
         await Task.Delay(TimeSpan
             .FromSeconds(2)); //wait some time as the consumers get the remaining message later than our timeout raise :)
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
     }
@@ -109,7 +109,7 @@ public class MessageTests
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
         foreach (var mediator in allMediators)
-            mediator.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         var sender = allMediators.First();
         //var receiver = allMediators.Skip(1).First();
         var message = new TestAnyTargetedMessage();
@@ -117,7 +117,7 @@ public class MessageTests
         Assert.True(sendResult.Success);
         var requiredMessageCount = 1;
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -130,7 +130,7 @@ public class MessageTests
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
         foreach (var mediator in allMediators)
-            mediator.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         var sender = allMediators.First();
         //var receiver = allMediators.Skip(1).First();
         var message = new TestAnyTargetedMessage { CrashPlease = true };
@@ -139,7 +139,7 @@ public class MessageTests
         Assert.False(sendResult.Success);
         var requiredMessageCount = 1;
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -152,7 +152,7 @@ public class MessageTests
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
         foreach (var mediator in allMediators)
-            mediator.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         var tasks = new List<Task>();
         foreach (var mediator in allMediators)
         {
@@ -167,7 +167,7 @@ public class MessageTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -181,7 +181,7 @@ public class MessageTests
 
         foreach (var mediator in allMediators)
         {
-            mediator.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         }
 
         var tasks = new List<Task>();
@@ -199,7 +199,7 @@ public class MessageTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetMessageConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -269,8 +269,8 @@ public class MessageTests
             TargetInstance = consumer.GetInstanceInformation()
         });
         Assert.True(sendResult.Success);
-        //Assert.Null(sender.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
-        Assert.Equal(1, consumer.GetMessageConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
+        //Assert.Null(sender.GetConsumerInstance<TestTargetedMessageConsumer>());
+        Assert.Equal(1, consumer.GetConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public class MessageTests
         });
         Assert.False(sendResult.Success);
         Assert.True(sendResult.SendFailure);
-        //Assert.Null(sender.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
-        //Assert.Null(consumer.GetMessageConsumerInstance<TestTargetedMessageConsumer>());
+        //Assert.Null(sender.GetConsumerInstance<TestTargetedMessageConsumer>());
+        //Assert.Null(consumer.GetConsumerInstance<TestTargetedMessageConsumer>());
     }
 }

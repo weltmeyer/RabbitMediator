@@ -77,27 +77,56 @@ public class ConfigurationTest
         var mediatorMultiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!, 10,
             customConnection: connection);
         await mediatorMultiplexer.Configure(CancellationToken.None);
-        var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, [typeof(TestTargetedRequestConsumer)]);
+        var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, new RabbitMediatorConfiguration
+        {
+            ConsumerTypes = [typeof(TestTargetedRequestConsumer)],
+            DefaultConfirmTimeOut = TimeSpan.FromSeconds(1),
+            DefaultResponseTimeOut = TimeSpan.FromSeconds(1)
+        });
         await mediator.Configure();
-        
-        mediator.DefaultConfirmTimeOut = TimeSpan.FromSeconds(1);
-        mediator.DefaultResponseTimeOut = TimeSpan.FromSeconds(1);
-        //await mediator.ConfigureBus(host.Services,connection);
-        //await mediatorMultiplexer.DisposeAsync();
     }
+    [Fact]
+    void ConfigInvalid_DuplicateRequestConsumer()
+    {
+        var cfg = new RabbitMediatorConfiguration
+        {
+            ConsumerTypes = new[] { typeof(TestTargetedRequestConsumer), typeof(TestTargetedRequestConsumer) }, 
+        };
 
+        Assert.Throws<InvalidOperationException>(() => cfg.Validate());
+
+
+    }
+    
+    [Fact]
+    void ConfigInvalid_DuplicateMessageConsumer()
+    {
+        var cfg = new RabbitMediatorConfiguration
+        {
+            ConsumerTypes = new[] { typeof(TestTargetedMessageConsumer), typeof(TestTargetedMessageConsumer) }, 
+        };
+
+        Assert.Throws<InvalidOperationException>(() => cfg.Validate());
+
+
+    }
+    
+    
+    
     [Fact]
     async Task ConfigureBusGood()
     {
         using var host = await _aspireHostFixture.PrepareHost();
         var mediatorMultiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!, 10);
         await mediatorMultiplexer.Configure(CancellationToken.None);
-        var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services, [typeof(TestTargetedRequestConsumer)]);
-        mediator.DefaultConfirmTimeOut = TimeSpan.FromSeconds(1);
-        mediator.DefaultResponseTimeOut = TimeSpan.FromSeconds(1);
+        var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services,
+            new RabbitMediatorConfiguration
+            {
+                ConsumerTypes = [typeof(TestTargetedRequestConsumer)],DefaultConfirmTimeOut = TimeSpan.FromSeconds(1)
+                ,DefaultResponseTimeOut = TimeSpan.FromSeconds(1)
+            }
+        );
         await mediator.Configure();
-
-        
     }
 
     [Fact]
@@ -110,7 +139,7 @@ public class ConfigurationTest
         {
             _ = new RabbitMediatorMultiplexer(
                 "notAnUrl"
-                );
+            );
         });
     }
 
@@ -124,7 +153,5 @@ public class ConfigurationTest
         {
             await mediatorMultiplexer.Configure();
         });
-
-        
     }
 }

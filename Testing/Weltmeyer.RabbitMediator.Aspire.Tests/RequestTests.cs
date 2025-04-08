@@ -25,7 +25,7 @@ public class RequestTests
 
         foreach (var mediator in allMediators)
         {
-            mediator.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
         }
 
         var requester = allMediators.First();
@@ -46,7 +46,7 @@ public class RequestTests
 
 
         var sumReceived = allMediators.Sum(m =>
-            m.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -60,7 +60,7 @@ public class RequestTests
 
         foreach (var mediator in allMediators)
         {
-            mediator.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
         }
 
         var tasks = new List<Task>();
@@ -85,7 +85,7 @@ public class RequestTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length * allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -100,7 +100,7 @@ public class RequestTests
 
         foreach (var mediator in allMediators)
         {
-            mediator.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
         }
 
         var tasks = new List<Task>();
@@ -133,7 +133,7 @@ public class RequestTests
         for (int i = 0; i < 10 && sumReceived < requiredMessageCount; i++)
         {
             sumReceived = allMediators.Sum(m =>
-                m.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
+                m.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
             await Task.Delay(TimeSpan.FromSeconds(1)); //need a raise in tests maybe...
         }
 
@@ -150,7 +150,7 @@ public class RequestTests
 
         foreach (var mediator in allMediators)
         {
-            mediator.GetRequestConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages = 0;
         }
 
         var tasks = new List<Task>();
@@ -171,7 +171,7 @@ public class RequestTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length * allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetRequestConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -186,7 +186,7 @@ public class RequestTests
 
         foreach (var mediator in allMediators)
         {
-            mediator.GetRequestConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages = 0;
+            mediator.GetConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages = 0;
         }
 
         var tasks = new List<Task>();
@@ -208,7 +208,7 @@ public class RequestTests
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length * allMediators.Length;
         var sumReceived = allMediators.Sum(m =>
-            m.GetRequestConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages);
+            m.GetConsumerInstance<TestAnyTargetedRequestConsumer>()!.ReceivedMessages);
 
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
@@ -252,8 +252,8 @@ public class RequestTests
         Assert.True(sendResult.Success);
         Assert.False(sendResult.SendFailure);
         Assert.Equal(sendResult.SenderInstance.InstanceId, consumer.InstanceId);
-        Assert.Null(sender.GetRequestConsumerInstance<TestTargetedRequestConsumer>());
-        Assert.Equal(1, consumer.GetRequestConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
+        Assert.Null(sender.GetConsumerInstance<TestTargetedRequestConsumer>());
+        Assert.Equal(1, consumer.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
     }
 
     [Fact]

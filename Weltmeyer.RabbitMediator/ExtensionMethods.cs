@@ -72,7 +72,8 @@ public static class ExtensionMethods
                     ? provider.GetRequiredService<RabbitMediatorMultiplexer>()
                     : provider.GetRequiredKeyedService<RabbitMediatorMultiplexer>(key);
 
-                var newMediator = multiplexer.CreateRabbitMediator(provider, consumerTypes);
+                var newMediator = multiplexer.CreateRabbitMediator(provider,
+                    new RabbitMediatorConfiguration { ConsumerTypes = consumerTypes });
                 var workerConfiguration =
                     provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
                 workerConfiguration.Value.PleaseConfigureMediators.Writer.TryWrite(newMediator);
@@ -80,6 +81,7 @@ public static class ExtensionMethods
                 {
                     throw new TimeoutException("Could not created mediator within time!");
                 }
+
                 return newMediator;
             }, lifeTime);
 
@@ -103,6 +105,6 @@ internal class RabbitMediatorWorkerConfiguration
     public readonly Channel<RabbitMediatorMultiplexer> PleaseConfigureMultiplexers =
         Channel.CreateUnbounded<RabbitMediatorMultiplexer>();
 
-    public readonly Channel<MultiplexedRabbitMediator> PleaseConfigureMediators =
-        Channel.CreateUnbounded<MultiplexedRabbitMediator>();
+    public readonly Channel<RabbitMediator> PleaseConfigureMediators =
+        Channel.CreateUnbounded<RabbitMediator>();
 }

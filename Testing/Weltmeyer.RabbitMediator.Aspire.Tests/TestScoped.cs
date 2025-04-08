@@ -37,7 +37,7 @@ public class TestScoped
         };
         var sendResult = await mediator1.Send(msg);
         Assert.True(sendResult.Success);
-        var consumer2 = mediator2.GetMessageConsumerInstance<TestTargetedMessageConsumer>();
+        var consumer2 = mediator2.GetConsumerInstance<TestTargetedMessageConsumer>();
         Assert.NotNull(consumer2);
         Assert.Equal(1,consumer2.ReceivedMessages);
 

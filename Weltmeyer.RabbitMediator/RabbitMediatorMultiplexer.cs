@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Diagnostics;
 using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -12,7 +13,7 @@ using Weltmeyer.RabbitMediator.MessageBases;
 
 namespace Weltmeyer.RabbitMediator;
 
-internal class RabbitMediatorMultiplexer
+internal class RabbitMediatorMultiplexer : IAsyncDisposable,IDisposable
 {
     public Guid InstanceId { get; } = Guid.NewGuid();
 
@@ -55,6 +56,9 @@ internal class RabbitMediatorMultiplexer
     private readonly ConcurrentDictionary<Guid, RequestResponseAwaiter> _responseWaiters = new();
 
 
+    private List<RabbitMultiplexerMediatorConfiguration> RabbitMultiplexerMediatorConfigurations = new();
+
+
     public RabbitMediatorMultiplexer(string connectionString, ushort consumerDispatchConcurrency = 10,
         ILogger<RabbitMediatorMultiplexer>? logger = null, IConnection? customConnection = null)
     {
@@ -72,15 +76,12 @@ internal class RabbitMediatorMultiplexer
     }
 
 
-    private readonly List<MultiplexedRabbitMediator> _multiPlexedRabbitMediators = new();
-
-
-    public async Task<TResponse> Request<TRequest, TResponse>(MultiplexedRabbitMediator multiplexedRabbitMediator,
-        TRequest request, TimeSpan responseTimeOut)
+    internal async Task<TResponse> Request<TRequest, TResponse>(RabbitMediator rabbitMediator,
+        TRequest request, TimeSpan? responseTimeOut)
         where TResponse : Response
         where TRequest : Request<TResponse>
     {
-        if (multiplexedRabbitMediator.Disposed)
+        if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
         {
@@ -89,7 +90,9 @@ internal class RabbitMediatorMultiplexer
                  targetedMessage.TargetInstance.InstanceScope == Guid.Empty))
                 throw new InvalidOperationException("TargetId not set!");
         }
-        await EnsureReceiver(multiplexedRabbitMediator, typeof(TResponse));
+        var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+
+        await EnsureReceiver(rabbitMediator, typeof(TResponse));
         var routingKey = request switch
         {
             //IBroadCastSentObject => BroadcastRoutingKey,
@@ -113,7 +116,7 @@ internal class RabbitMediatorMultiplexer
         request.SenderInstance = new InstanceInformation
         {
             InstanceId = this.InstanceId,
-            InstanceScope = multiplexedRabbitMediator.ScopeId,
+            InstanceScope = rabbitMediator.ScopeId,
         };
         request.CorrelationId = Guid.NewGuid();
 
@@ -139,7 +142,7 @@ internal class RabbitMediatorMultiplexer
             publishErrorResponse.TargetInstance = new InstanceInformation
             {
                 InstanceId = this.InstanceId,
-                InstanceScope = multiplexedRabbitMediator.ScopeId
+                InstanceScope = rabbitMediator.ScopeId
             };
             publishErrorResponse.CorrelationId = request.CorrelationId;
 
@@ -156,7 +159,7 @@ internal class RabbitMediatorMultiplexer
         }
 
 
-        var timeOutTask = Task.Delay(responseTimeOut);
+        var timeOutTask = Task.Delay(responseTimeOut ?? configuration.Configuration.DefaultResponseTimeOut);
         var responseWaitTask = awaiter.TaskCompletionSource.Task;
         var waitResult = await Task.WhenAny(timeOutTask, responseWaitTask);
         if (waitResult == responseWaitTask)
@@ -175,7 +178,7 @@ internal class RabbitMediatorMultiplexer
         timedOutResponse.TargetInstance = new InstanceInformation
         {
             InstanceId = this.InstanceId,
-            InstanceScope = multiplexedRabbitMediator.ScopeId
+            InstanceScope = rabbitMediator.ScopeId
         };
         timedOutResponse.CorrelationId = request.CorrelationId;
 
@@ -193,14 +196,14 @@ internal class RabbitMediatorMultiplexer
         return timedOutResponse;
     }
 
-    public async Task<SendResult> Send<TMessageType>(MultiplexedRabbitMediator multiplexedRabbitMediator,
-        TMessageType message, bool confirmPublish, TimeSpan confirmTimeOut)
+    internal async Task<SendResult> Send<TMessageType>(RabbitMediator rabbitMediator,
+        TMessageType message, bool confirmPublish, TimeSpan? confirmTimeOut)
         where TMessageType : Message
     {
-        if (multiplexedRabbitMediator.Disposed)
+        if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
-        await EnsureReceiver(multiplexedRabbitMediator, typeof(TMessageType));
+        await EnsureReceiver(rabbitMediator, typeof(TMessageType));
 
         if (message is ITargetedSentObject targetedMessage &&
             (targetedMessage.TargetInstance.InstanceId == Guid.Empty ||
@@ -230,7 +233,7 @@ internal class RabbitMediatorMultiplexer
         message.SenderInstance = new InstanceInformation
         {
             InstanceId = InstanceId,
-            InstanceScope = multiplexedRabbitMediator.ScopeId,
+            InstanceScope = rabbitMediator.ScopeId,
         };
         message.CorrelationId = Guid.NewGuid();
         message.RequireAck = confirmPublish;
@@ -258,7 +261,9 @@ internal class RabbitMediatorMultiplexer
 
             if (confirmPublish)
             {
-                var timeOutTask = Task.Delay(confirmTimeOut);
+                var configuration =
+                    RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+                var timeOutTask = Task.Delay(confirmTimeOut ?? configuration.Configuration.DefaultConfirmTimeOut);
                 var ackMsgTask = targetAckAwaiter!.TaskCompletionSource.Task;
                 var waitResult = await Task.WhenAny(timeOutTask, ackMsgTask);
                 if (waitResult == ackMsgTask)
@@ -286,12 +291,16 @@ internal class RabbitMediatorMultiplexer
     }
 
 
-    internal async Task ConfigureRabbitMediator(MultiplexedRabbitMediator multiplexedRabbitMediator)
+    internal async Task ConfigureRabbitMediator(RabbitMediator rabbitMediator)
     {
-        await ConfigureDone.WaitAsync();
+        await _configureDone.WaitAsync();
         var iMessageConsumerType = typeof(IMessageConsumer<>);
         var iRequestConsumerType = typeof(IRequestConsumer<,>);
-        foreach (var consumerType in multiplexedRabbitMediator.ConsumerTypes)
+
+        var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+
+
+        foreach (var consumerType in configuration.Configuration.ConsumerTypes)
         {
             var interfaces = consumerType.GetInterfaces();
             var messageConsumerInterfaces = interfaces.Where(i =>
@@ -302,57 +311,81 @@ internal class RabbitMediatorMultiplexer
             foreach (var messageConsumerInterface in messageConsumerInterfaces)
             {
                 var messageType = messageConsumerInterface.GetGenericArguments()[0];
-                multiplexedRabbitMediator.SentTypeToConsumerMapping.TryAdd(messageType, consumerType);
-                await EnsureReceiver(multiplexedRabbitMediator, messageType);
+                configuration.SentTypeToConsumerMapping.TryAdd(messageType, consumerType);
+                await EnsureReceiver(rabbitMediator, messageType);
             }
 
             foreach (var requestConsumerInterface in requestConsumerInterfaces)
             {
                 var requestType = requestConsumerInterface.GetGenericArguments()[0];
-                multiplexedRabbitMediator.SentTypeToConsumerMapping.TryAdd(requestType, consumerType);
+                configuration.SentTypeToConsumerMapping.TryAdd(requestType, consumerType);
 
-                await EnsureReceiver(multiplexedRabbitMediator, requestType);
+                await EnsureReceiver(rabbitMediator, requestType);
             }
         }
     }
 
-    public MultiplexedRabbitMediator CreateRabbitMediator(IServiceProvider serviceProvider, Type[] consumerTypes)
+    public RabbitMediator CreateRabbitMediator(IServiceProvider serviceProvider,
+        RabbitMediatorConfiguration configuration)
     {
-        var newMediator = new MultiplexedRabbitMediator(serviceProvider, consumerTypes, this);
-        _multiPlexedRabbitMediators.Add(newMediator);
+        configuration.Validate();
+        var newMediator = new RabbitMediator(this);
+        RabbitMultiplexerMediatorConfigurations.Add(
+            new RabbitMultiplexerMediatorConfiguration(newMediator, configuration, serviceProvider));
         return newMediator;
     }
 
-
-    internal async Task RemoveQueues(MultiplexedRabbitMediator serviceScopeContainer)
+    internal IConsumer? GetConsumer(RabbitMediator rabbitMediator, Type consumerType)
     {
-        foreach (var consumerKV in serviceScopeContainer.ConsumerTags)
+        if (!consumerType.IsAssignableTo(typeof(IConsumer)))
+            throw new ArgumentException($"The type {consumerType.FullName} does not implement {nameof(IConsumer)}");
+
+        var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+
+        if (!configuration.Configuration.ConsumerTypes.Contains(consumerType))
+            return null;
+        return configuration.ConsumerInstances.GetOrAdd(consumerType, static (_, serviceProviderAndType) =>
+            (IConsumer)ActivatorUtilities.CreateInstance(serviceProviderAndType.ServiceProvider,
+                serviceProviderAndType.consumerType), (configuration.ServiceProvider, consumerType));
+    }
+
+
+    internal async Task DisposeRabbitMediatorConnection(RabbitMediator mediator)
+    {
+        var configuration =
+            this.RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
+        foreach (var consumerKv in configuration.ConsumerTags)
         {
-            await consumerKV.Value.BasicCancelAsync(consumerKV.Key, true);
+            await consumerKv.Value.BasicCancelAsync(consumerKv.Key, true);
         }
 
 
-        foreach (var queue in serviceScopeContainer.OwnedQueues)
+        foreach (var queue in configuration.OwnedQueues)
         {
-            var deleted = await queue.Value.QueueDeleteAsync(queue.Key, false, false, true);
+            await queue.Value.QueueDeleteAsync(queue.Key, false, false, true);
         }
     }
 
-    private async Task EnsureReceiver(MultiplexedRabbitMediator mediator, Type sentObjectType)
+
+    private async Task EnsureReceiver(RabbitMediator mediatorT, Type sentObjectType)
     {
-        if (mediator.Disposed)
+        if (mediatorT.Disposed)
             return;
 
         var typeName = sentObjectType.FullName!;
-        if (mediator.RabbitMQConsumers.ContainsKey(typeName))
-            return; //fast return, no semaphore needed :)
+
+        var configuration = RabbitMultiplexerMediatorConfigurations.First(x => x.RabbitMediator == mediatorT);
+
+        if (configuration.RegisteredConsumerTypes.Contains(sentObjectType))
+            return;
 
 
-        await mediator.EnsureReceiverSemaphore.WaitAsync();
+        await configuration.EnsureReceiverSemaphore.WaitAsync();
         try
         {
-            if (mediator.RabbitMQConsumers.ContainsKey(typeName))
+            if (configuration.RegisteredConsumerTypes.Contains(sentObjectType))
                 return;
+
 
             string exchangeName;
             QueueDeclareOk? queue;
@@ -377,12 +410,12 @@ internal class RabbitMediatorMultiplexer
                 await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false);
 
                 queue = await useChannel.QueueDeclareAsync(
-                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{mediator.ScopeId}",
+                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{configuration.RabbitMediator.ScopeId}",
                     durable: false, exclusive: true,
                     autoDelete: true);
-                mediator.OwnedQueues.TryAdd(queue.QueueName, useChannel);
+                configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
                 await useChannel.QueueBindAsync(queue.QueueName, exchangeName,
-                    InstanceId.ToString() + "_" + mediator.ScopeId.ToString());
+                    InstanceId.ToString() + "_" + configuration.RabbitMediator.ScopeId.ToString());
             }
             else if (sentObjectType.IsAssignableTo(typeof(IBroadCastSentObject)))
             {
@@ -391,10 +424,10 @@ internal class RabbitMediatorMultiplexer
                     false);
 
                 queue = await useChannel.QueueDeclareAsync(
-                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{mediator.ScopeId}",
+                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{configuration.RabbitMediator.ScopeId}",
                     durable: false, exclusive: true,
                     autoDelete: false);
-                mediator.OwnedQueues.TryAdd(queue.QueueName, useChannel);
+                configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
                 await useChannel.QueueBindAsync(queue.QueueName,
                     exchangeName, BroadcastRoutingKey);
             }
@@ -420,7 +453,7 @@ internal class RabbitMediatorMultiplexer
             }
 
             var consumer = new AsyncEventingBasicConsumer(useChannel);
-            consumer.ReceivedAsync += (obj, args) => HandleSentObjectReceived(obj, args, mediator);
+            consumer.ReceivedAsync += (obj, args) => HandleSentObjectReceived(obj, args, configuration.RabbitMediator);
             var registeredSem =
                 new SemaphoreSlim(1,
                     1); //used to make sure then receiver is registered before returning. TaskCompletionSource could also be used?
@@ -448,24 +481,24 @@ internal class RabbitMediatorMultiplexer
             };
 
             var consumerTag = exchangeName + KeySeparator + InstanceId.ToString() + KeySeparator +
-                              mediator.ScopeId.ToString();
+                              configuration.RabbitMediator.ScopeId.ToString();
             _ = await useChannel.BasicConsumeAsync(queue.QueueName, false,
                 consumerTag,
                 consumer);
 
             await registeredSem.WaitAsync();
-            mediator.RabbitMQConsumers.Add(typeName, consumer);
-            mediator.ConsumerTags.Add(consumerTag, useChannel);
+            configuration.RegisteredConsumerTypes.Add(sentObjectType);
+            configuration.ConsumerTags.Add(consumerTag, useChannel);
         }
         finally
         {
-            mediator.EnsureReceiverSemaphore.Release();
+            configuration.EnsureReceiverSemaphore.Release();
         }
     }
 
 
     private async Task<bool> TryHandleSentObjectReceived(object _, BasicDeliverEventArgs eventArgs,
-        MultiplexedRabbitMediator mediator)
+        RabbitMediator mediator)
     {
         if (mediator.Disposed)
             return false;
@@ -516,7 +549,7 @@ internal class RabbitMediatorMultiplexer
     }
 
     private async Task HandleSentObjectReceived(object sender, BasicDeliverEventArgs eventArgs,
-        MultiplexedRabbitMediator mediator)
+        RabbitMediator mediator)
     {
         //ack must be sent via source channel
         var consumer = (AsyncEventingBasicConsumer)sender;
@@ -539,9 +572,11 @@ internal class RabbitMediatorMultiplexer
     }
 
 
-    private async Task<bool> HandleMessage(IMessage message, MultiplexedRabbitMediator serviceScopeContainer)
+    private async Task<bool> HandleMessage(IMessage message, RabbitMediator mediator)
     {
-        if (serviceScopeContainer.SentTypeToConsumerMapping.TryGetValue(message.GetType(), out var consumerType))
+        var configuration =
+            RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
+        if (configuration.SentTypeToConsumerMapping.TryGetValue(message.GetType(), out var consumerType))
         {
             var sentObjectAck = new SentObjectAck
             {
@@ -551,7 +586,7 @@ internal class RabbitMediatorMultiplexer
 
             try
             {
-                var consumer = serviceScopeContainer.GetConsumer(consumerType);
+                var consumer = mediator.GetConsumer(consumerType);
 
                 var consumeMethod = consumerType.GetMethod(nameof(IMessageConsumer<Message>.Consume))!;
                 await (Task)consumeMethod.Invoke(consumer, [message])!;
@@ -598,11 +633,14 @@ internal class RabbitMediatorMultiplexer
         return false;
     }
 
-    private async Task<bool> HandleRequest(IRequest request, MultiplexedRabbitMediator serviceScopeContainer)
+    private async Task<bool> HandleRequest(IRequest request, RabbitMediator mediator)
     {
-        serviceScopeContainer.SentTypeToConsumerMapping.TryGetValue(request.GetType(), out var consumerType);
+        var configuration =
+            RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
+        configuration.SentTypeToConsumerMapping.TryGetValue(request.GetType(), out var consumerType);
 
-        var consumer = serviceScopeContainer.GetConsumer(consumerType);
+        Debug.Assert(consumerType != null);
+        var consumer = GetConsumer(mediator, consumerType);
         //var consumer = serviceScopeContainer.ServiceProvider.GetService(consumerType);
         //consumer ??= Activator.CreateInstance(consumerType);
         //_requestConsumers.TryGetValue(request.GetType().FullName!, out var consumer);
@@ -632,7 +670,7 @@ internal class RabbitMediatorMultiplexer
         response.CorrelationId = request.CorrelationId;
         response.SenderInstance = new InstanceInformation()
         {
-            InstanceScope = serviceScopeContainer.ScopeId,
+            InstanceScope = mediator.ScopeId,
             InstanceId = this.InstanceId,
         };
         response.TargetInstance = request.SenderInstance;
@@ -646,7 +684,7 @@ internal class RabbitMediatorMultiplexer
     }
 
 
-    internal readonly SemaphoreSlim ConfigureDone = new SemaphoreSlim(0, 1);
+    private readonly SemaphoreSlim _configureDone = new(0, 1);
 
     public async Task Configure(CancellationToken? cancellationToken = null)
     {
@@ -682,49 +720,48 @@ internal class RabbitMediatorMultiplexer
             return Task.CompletedTask;
         };
 
-        _sendMessageChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: true,
-            publisherConfirmationTrackingEnabled: true
-        ));
+        async Task<IChannel> CreateSendChannel(IConnection connection)
+        {
+            return await connection.CreateChannelAsync(new CreateChannelOptions(
+                publisherConfirmationsEnabled: true,
+                publisherConfirmationTrackingEnabled: true));
+        }
 
-        _sendRequestChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: true,
-            publisherConfirmationTrackingEnabled: true
-        ));
+        async Task<IChannel> CreateReceiveChannel(IConnection connection)
+        {
+            return await connection.CreateChannelAsync(new CreateChannelOptions(
+                publisherConfirmationsEnabled: false,
+                publisherConfirmationTrackingEnabled: false,
+                consumerDispatchConcurrency: _consumerDispatchConcurrency
+            ));
+        }
 
-        _sendResponseChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: true,
-            publisherConfirmationTrackingEnabled: true
-        ));
+        async Task<IChannel> CreateAckChannel(IConnection connection)
+        {
+            return await connection.CreateChannelAsync(new CreateChannelOptions(
+                publisherConfirmationsEnabled: false,
+                publisherConfirmationTrackingEnabled: false
+            ));
+        }
 
 
-        _receiveMessageChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false,
-            consumerDispatchConcurrency: _consumerDispatchConcurrency
-        ));
+        _sendMessageChannel = await CreateSendChannel(_connection);
+
+        _sendRequestChannel = await CreateSendChannel(_connection);
+
+        _sendResponseChannel = await CreateSendChannel(_connection);
 
 
-        _receiveRequestChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false,
-            consumerDispatchConcurrency: _consumerDispatchConcurrency
-        ));
+        _receiveMessageChannel = await CreateReceiveChannel(_connection);
 
-        _receiveResponseChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false,
-            consumerDispatchConcurrency: _consumerDispatchConcurrency
-        ));
 
-        _receiveAckChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false
-        ));
-        _sendAckChannel = await _connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false
-        ));
+        _receiveRequestChannel = await CreateReceiveChannel(_connection);
+
+        _receiveResponseChannel = await CreateReceiveChannel(_connection);
+
+
+        _receiveAckChannel = await CreateAckChannel(_connection);
+        _sendAckChannel = await CreateAckChannel(_connection);
 
         #endregion
 
@@ -744,6 +781,25 @@ internal class RabbitMediatorMultiplexer
         };
         await _receiveAckChannel.BasicConsumeAsync(ackQueue.QueueName, true, ackConsumer);
 
-        ConfigureDone.Release();
+        _configureDone.Release();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_connection != null) await _connection.DisposeAsync();
+        if (_sendMessageChannel != null) await _sendMessageChannel.DisposeAsync();
+        if (_sendRequestChannel != null) await _sendRequestChannel.DisposeAsync();
+        if (_sendResponseChannel != null) await _sendResponseChannel.DisposeAsync();
+        if (_receiveMessageChannel != null) await _receiveMessageChannel.DisposeAsync();
+        if (_receiveRequestChannel != null) await _receiveRequestChannel.DisposeAsync();
+        if (_receiveResponseChannel != null) await _receiveResponseChannel.DisposeAsync();
+        if (_receiveAckChannel != null) await _receiveAckChannel.DisposeAsync();
+        if (_sendAckChannel != null) await _sendAckChannel.DisposeAsync();
+        _configureDone.Dispose();
+    }
+
+    public void Dispose()
+    {
+        Task.Run(this.DisposeAsync).GetAwaiter().GetResult();;//baaaaaaah
     }
 }
