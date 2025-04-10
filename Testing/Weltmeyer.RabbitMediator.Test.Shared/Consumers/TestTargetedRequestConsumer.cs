@@ -12,6 +12,6 @@ public class TestTargetedRequestConsumer : IRequestConsumer<TestTargetedRequest,
         Interlocked.Increment(ref ReceivedMessages);
         if (message.Delay.HasValue)
             await Task.Delay(message.Delay.Value);
-        return new TestTargetedResponse();
+        return new TestTargetedResponse { TestRequiredString = DateTimeOffset.Now.ToString() };
     }
 }

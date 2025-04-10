@@ -12,6 +12,6 @@ public class TestAnyTargetedRequestConsumer : IRequestConsumer<TestAnyTargetedRe
         Interlocked.Increment(ref ReceivedMessages);
         if(message.CrashPlease)
             throw new TestException();
-        return Task.FromResult(new TestAnyTargetedResponse());
+        return Task.FromResult(new TestAnyTargetedResponse{TestRequiredString = DateTimeOffset.Now.ToString()});
     }
 }

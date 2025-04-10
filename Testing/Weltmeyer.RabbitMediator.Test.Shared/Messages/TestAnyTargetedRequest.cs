@@ -9,5 +9,5 @@ public class TestAnyTargetedRequest:AnyTargetedRequest<TestAnyTargetedResponse>
 
 public class TestAnyTargetedResponse : Response
 {
-    
+    public required string TestRequiredString { get; init; }
 }
