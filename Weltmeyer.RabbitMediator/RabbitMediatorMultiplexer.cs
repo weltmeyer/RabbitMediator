@@ -203,7 +203,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
-        await EnsureReceiver(rabbitMediator, typeof(TMessageType));
+        //await EnsureReceiver(rabbitMediator, typeof(TMessageType));
 
         if (message is ITargetedSentObject targetedMessage &&
             (targetedMessage.TargetInstance.InstanceId == Guid.Empty ||

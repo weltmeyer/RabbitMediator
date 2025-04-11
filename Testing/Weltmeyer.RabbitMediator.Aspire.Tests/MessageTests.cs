@@ -302,4 +302,30 @@ public class MessageTests
         //Assert.Null(sender.GetConsumerInstance<TestTargetedMessageConsumer>());
         //Assert.Null(consumer.GetConsumerInstance<TestTargetedMessageConsumer>());
     }
+
+    [Fact]
+    public async Task TestNoBroadcastConsumer()
+    {
+        var connectionString = await _aspireHostFixture.AspireAppHost.GetConnectionStringAsync("rabbitmq");
+
+        using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
+        {
+            builder.Services.AddRabbitMediator([typeof(TestBroadCastMessageConsumer)],
+                connectionString!, "receiverWithConsumer");
+            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
+                connectionString!, "receiverWithoutConsumer");
+            
+            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
+                connectionString!, "sender");
+        });
+        
+        
+        //var receiverWithConsumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("receiverWithConsumer");
+        var receiverWithoutConsumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("receiverWithoutConsumer");
+        var sender = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("sender");
+
+
+        var sendResult = await sender.Send(new TestBroadcastMessage());
+        await Task.Delay(1000);
+    }
 }
