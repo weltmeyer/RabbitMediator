@@ -83,7 +83,7 @@ public class ConfigurationTest
             DefaultConfirmTimeOut = TimeSpan.FromSeconds(1),
             DefaultResponseTimeOut = TimeSpan.FromSeconds(1)
         });
-        await mediator.Configure();
+        await mediator.EnsureConfigured();
     }
     [Fact]
     void ConfigInvalid_DuplicateRequestConsumer()
@@ -126,7 +126,7 @@ public class ConfigurationTest
                 ,DefaultResponseTimeOut = TimeSpan.FromSeconds(1)
             }
         );
-        await mediator.Configure();
+        await mediator.EnsureConfigured();
     }
 
     [Fact]

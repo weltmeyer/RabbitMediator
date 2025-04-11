@@ -42,7 +42,7 @@ public static class ExtensionMethods
                 $"These types are no consumers: {string.Join(",", missingTypes.Select(mt => mt.FullName))}");
         }
 
-        serviceCollection.Configure<RabbitMediatorWorkerConfiguration>(opt => { });
+        
 
         var lifeTime = scoped ? ServiceLifetime.Scoped : ServiceLifetime.Singleton;
 
@@ -77,6 +77,7 @@ public static class ExtensionMethods
                 var workerConfiguration =
                     provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
                 workerConfiguration.Value.PleaseConfigureMediators.Writer.TryWrite(newMediator);
+                Task.Run(() => newMediator.EnsureConfigured());//how to start a service asynchronously?
                 if (!newMediator.WaitReady(TimeSpan.FromSeconds(5)))
                 {
                     throw new TimeoutException("Could not created mediator within time!");
@@ -95,6 +96,7 @@ public static class ExtensionMethods
     {
         if (serviceCollection.All(sd => sd.ServiceType != typeof(RabbitMediatorWorker)))
         {
+            serviceCollection.Configure<RabbitMediatorWorkerConfiguration>(opt => { });
             serviceCollection.AddHostedService<RabbitMediatorWorker>();
         }
     }

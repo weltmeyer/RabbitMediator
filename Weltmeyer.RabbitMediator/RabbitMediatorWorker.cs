@@ -48,7 +48,7 @@ internal class RabbitMediatorWorker(
     {
         await foreach (var client in options.Value.PleaseConfigureMediators.Reader.ReadAllAsync())
         {
-            _=Task.Run(client.Configure);
+            _=Task.Run(client.EnsureConfigured);
         }
     }
     

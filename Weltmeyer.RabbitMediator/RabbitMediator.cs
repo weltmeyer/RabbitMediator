@@ -18,17 +18,19 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
     public Guid InstanceId => _multiplexer.InstanceId;
 
 
-    public Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
+    public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
         where TRequest : Request<TResponse> where TResponse : Response
     {
-        return this._multiplexer.Request<TRequest, TResponse>(this, request,
+        await EnsureConfigured();
+        return await this._multiplexer.Request<TRequest, TResponse>(this, request,
             responseTimeOut);
     }
 
-    public Task<SendResult> Send<TMessageType>(TMessageType message, bool confirmPublish = true,
+    public async Task<SendResult> Send<TMessageType>(TMessageType message, bool confirmPublish = true,
         TimeSpan? confirmTimeOut = null) where TMessageType : Message
     {
-        return this._multiplexer.Send(this, message, confirmPublish, confirmTimeOut);
+        await EnsureConfigured();
+        return await this._multiplexer.Send(this, message, confirmPublish, confirmTimeOut);
     }
 
     public T? GetConsumerInstance<T>() where T : IConsumer
@@ -55,19 +57,32 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
 
     internal bool Disposed;
 
-    private readonly SemaphoreSlim _configureDone = new(0, 1);
+    private bool _configureDone;
 
- 
-
-    public async Task Configure()
+    private readonly SemaphoreSlim _configureLock = new(1, 1);
+    private readonly ManualResetEventSlim _configureEvent = new(false);
+    public async Task EnsureConfigured()
     {
-        await this._multiplexer.ConfigureRabbitMediator(this);
-        _configureDone.Release();
+        if (_configureDone)
+            return;//we are done configuring
+        await _configureLock.WaitAsync();
+        try
+        {
+            if (_configureDone)
+                return; //we are done configuring
+            await this._multiplexer.ConfigureRabbitMediator(this);
+            _configureDone = true;
+            _configureEvent.Set();
+        }
+        finally
+        {
+            _configureLock.Release();
+        }        
     }
 
     public bool WaitReady(TimeSpan maxWait)
     {
-        return _configureDone.Wait(maxWait);
+        return _configureEvent.Wait(maxWait);
     }
 
     public async ValueTask DisposeAsync()
@@ -75,17 +90,11 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
         Disposed = true;
 
         await _multiplexer.DisposeRabbitMediatorConnection(this);
-        await CastAndDispose(_configureDone);
+        
 
         return;
 
-        static async ValueTask CastAndDispose(IDisposable resource)
-        {
-            if (resource is IAsyncDisposable resourceAsyncDisposable)
-                await resourceAsyncDisposable.DisposeAsync();
-            else
-                resource.Dispose();
-        }
+      
     }
 
     public void Dispose()

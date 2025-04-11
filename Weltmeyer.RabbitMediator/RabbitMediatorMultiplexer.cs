@@ -13,7 +13,7 @@ using Weltmeyer.RabbitMediator.MessageBases;
 
 namespace Weltmeyer.RabbitMediator;
 
-internal class RabbitMediatorMultiplexer : IAsyncDisposable,IDisposable
+internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 {
     public Guid InstanceId { get; } = Guid.NewGuid();
 
@@ -293,7 +293,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable,IDisposable
 
     internal async Task ConfigureRabbitMediator(RabbitMediator rabbitMediator)
     {
-        await _configureDone.WaitAsync();
+        await Configure();
         var iMessageConsumerType = typeof(IMessageConsumer<>);
         var iRequestConsumerType = typeof(IRequestConsumer<,>);
 
@@ -684,104 +684,121 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable,IDisposable
     }
 
 
-    private readonly SemaphoreSlim _configureDone = new(0, 1);
+    private bool _configureDone = false;
+    private readonly SemaphoreSlim _configureLock = new(1, 1);
+
 
     public async Task Configure(CancellationToken? cancellationToken = null)
     {
-        cancellationToken ??= CancellationToken.None;
-        var myName = $"{AppDomain.CurrentDomain.FriendlyName}{KeySeparator}{this.InstanceId}";
-        _connection ??=
-            await _connectionFactory!.CreateConnectionAsync(clientProvidedName: myName,
-                cancellationToken: cancellationToken.Value);
-
-        #region Create Channels
-
-        _connection.ConnectionShutdownAsync += (_, args) =>
+        
+        if (_configureDone)
+            return;
+        await _configureLock.WaitAsync();
+        try
         {
-            _logger?.LogWarning("Connection shutdown {args}", args);
-            return Task.CompletedTask;
-        };
-
-        _connection.RecoveringConsumerAsync += (_, args) =>
-        {
-            _logger?.LogInformation("Recover consumer... {ConsumerTag}", args.ConsumerTag);
-            return Task.CompletedTask;
-        };
-
-
-        _connection.RecoverySucceededAsync += (_, _) =>
-        {
-            _logger?.LogInformation("Recovery succeeded");
-            return Task.CompletedTask;
-        };
-        _connection.ConnectionRecoveryErrorAsync += (_, args) =>
-        {
-            _logger?.LogCritical(args.Exception, "Recovery failed");
-            return Task.CompletedTask;
-        };
-
-        async Task<IChannel> CreateSendChannel(IConnection connection)
-        {
-            return await connection.CreateChannelAsync(new CreateChannelOptions(
-                publisherConfirmationsEnabled: true,
-                publisherConfirmationTrackingEnabled: true));
-        }
-
-        async Task<IChannel> CreateReceiveChannel(IConnection connection)
-        {
-            return await connection.CreateChannelAsync(new CreateChannelOptions(
-                publisherConfirmationsEnabled: false,
-                publisherConfirmationTrackingEnabled: false,
-                consumerDispatchConcurrency: _consumerDispatchConcurrency
-            ));
-        }
-
-        async Task<IChannel> CreateAckChannel(IConnection connection)
-        {
-            return await connection.CreateChannelAsync(new CreateChannelOptions(
-                publisherConfirmationsEnabled: false,
-                publisherConfirmationTrackingEnabled: false
-            ));
-        }
-
-
-        _sendMessageChannel = await CreateSendChannel(_connection);
-
-        _sendRequestChannel = await CreateSendChannel(_connection);
-
-        _sendResponseChannel = await CreateSendChannel(_connection);
-
-
-        _receiveMessageChannel = await CreateReceiveChannel(_connection);
-
-
-        _receiveRequestChannel = await CreateReceiveChannel(_connection);
-
-        _receiveResponseChannel = await CreateReceiveChannel(_connection);
-
-
-        _receiveAckChannel = await CreateAckChannel(_connection);
-        _sendAckChannel = await CreateAckChannel(_connection);
-
-        #endregion
-
-
-        var ackQueue = await _receiveAckChannel.QueueDeclareAsync($"{AckQueuePrefix}{KeySeparator}{InstanceId}",
-            false,
-            true, true);
-
-        var ackConsumer = new AsyncEventingBasicConsumer(_receiveAckChannel);
-        ackConsumer.ReceivedAsync += async (_, args) =>
-        {
-            var ackMsg = await _serializerHelper.Deserialize<SentObjectAck>(args.Body);
-            Debug.Assert(ackMsg != null);
-            if (!_targetAckWaiters.Remove(ackMsg.CorrelationId, out var waiter))
+            if (_configureDone)
                 return;
-            waiter.TaskCompletionSource.SetResult(ackMsg);
-        };
-        await _receiveAckChannel.BasicConsumeAsync(ackQueue.QueueName, true, ackConsumer);
 
-        _configureDone.Release();
+            cancellationToken ??= CancellationToken.None;
+            var myName = $"{AppDomain.CurrentDomain.FriendlyName}{KeySeparator}{this.InstanceId}";
+            _connection ??=
+                await _connectionFactory!.CreateConnectionAsync(clientProvidedName: myName,
+                    cancellationToken: cancellationToken.Value);
+
+            #region Create Channels
+
+            _connection.ConnectionShutdownAsync += (_, args) =>
+            {
+                _logger?.LogWarning("Connection shutdown {args}", args);
+                return Task.CompletedTask;
+            };
+
+            _connection.RecoveringConsumerAsync += (_, args) =>
+            {
+                _logger?.LogInformation("Recover consumer... {ConsumerTag}", args.ConsumerTag);
+                return Task.CompletedTask;
+            };
+
+
+            _connection.RecoverySucceededAsync += (_, _) =>
+            {
+                _logger?.LogInformation("Recovery succeeded");
+                return Task.CompletedTask;
+            };
+            _connection.ConnectionRecoveryErrorAsync += (_, args) =>
+            {
+                _logger?.LogCritical(args.Exception, "Recovery failed");
+                return Task.CompletedTask;
+            };
+
+            async Task<IChannel> CreateSendChannel(IConnection connection)
+            {
+                return await connection.CreateChannelAsync(new CreateChannelOptions(
+                    publisherConfirmationsEnabled: true,
+                    publisherConfirmationTrackingEnabled: true));
+            }
+
+            async Task<IChannel> CreateReceiveChannel(IConnection connection)
+            {
+                return await connection.CreateChannelAsync(new CreateChannelOptions(
+                    publisherConfirmationsEnabled: false,
+                    publisherConfirmationTrackingEnabled: false,
+                    consumerDispatchConcurrency: _consumerDispatchConcurrency
+                ));
+            }
+
+            async Task<IChannel> CreateAckChannel(IConnection connection)
+            {
+                return await connection.CreateChannelAsync(new CreateChannelOptions(
+                    publisherConfirmationsEnabled: false,
+                    publisherConfirmationTrackingEnabled: false
+                ));
+            }
+
+
+            _sendMessageChannel = await CreateSendChannel(_connection);
+
+            _sendRequestChannel = await CreateSendChannel(_connection);
+
+            _sendResponseChannel = await CreateSendChannel(_connection);
+
+
+            _receiveMessageChannel = await CreateReceiveChannel(_connection);
+
+
+            _receiveRequestChannel = await CreateReceiveChannel(_connection);
+
+            _receiveResponseChannel = await CreateReceiveChannel(_connection);
+
+
+            _receiveAckChannel = await CreateAckChannel(_connection);
+            _sendAckChannel = await CreateAckChannel(_connection);
+
+            #endregion
+
+
+            var ackQueue = await _receiveAckChannel.QueueDeclareAsync($"{AckQueuePrefix}{KeySeparator}{InstanceId}",
+                false,
+                true, true);
+
+            var ackConsumer = new AsyncEventingBasicConsumer(_receiveAckChannel);
+            ackConsumer.ReceivedAsync += async (_, args) =>
+            {
+                var ackMsg = await _serializerHelper.Deserialize<SentObjectAck>(args.Body);
+                Debug.Assert(ackMsg != null);
+                if (!_targetAckWaiters.Remove(ackMsg.CorrelationId, out var waiter))
+                    return;
+                waiter.TaskCompletionSource.SetResult(ackMsg);
+            };
+            await _receiveAckChannel.BasicConsumeAsync(ackQueue.QueueName, true, ackConsumer);
+            _configureDone = true;
+        }
+        finally
+        {
+            _configureLock.Release();
+        }
+
+       
     }
 
     public async ValueTask DisposeAsync()
@@ -795,11 +812,11 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable,IDisposable
         if (_receiveResponseChannel != null) await _receiveResponseChannel.DisposeAsync();
         if (_receiveAckChannel != null) await _receiveAckChannel.DisposeAsync();
         if (_sendAckChannel != null) await _sendAckChannel.DisposeAsync();
-        _configureDone.Dispose();
     }
 
     public void Dispose()
     {
-        Task.Run(this.DisposeAsync).GetAwaiter().GetResult();;//baaaaaaah
+        Task.Run(this.DisposeAsync).GetAwaiter().GetResult();
+        ; //baaaaaaah
     }
 }

@@ -8,6 +8,7 @@ public static class ExtensionMethods
             t == null
                 ? serviceProvider.GetRequiredService<IRabbitMediator>()
                 : serviceProvider.GetRequiredKeyedService<IRabbitMediator>(t)).ToArray();
+
         return allMediators;
     }
 }
