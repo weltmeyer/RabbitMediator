@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
-using Weltmeyer.RabbitMediator.Contracts;
+using Weltmeyer.RabbitMediator.Contracts.Contracts;
 
-namespace Weltmeyer.RabbitMediator.MessageBases;
+namespace Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
 public abstract class TargetedMessage : Message, ITargetedSentObject
 {

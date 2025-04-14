@@ -1,4 +1,4 @@
-namespace Weltmeyer.RabbitMediator.ConsumerBases;
+namespace Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
 
 /// <summary>
 /// Don't implement this interface

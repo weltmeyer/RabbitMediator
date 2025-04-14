@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
-using Weltmeyer.RabbitMediator.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
 
 namespace Weltmeyer.RabbitMediator;
 

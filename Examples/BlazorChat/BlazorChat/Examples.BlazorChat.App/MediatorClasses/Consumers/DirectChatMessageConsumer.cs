@@ -1,5 +1,5 @@
 using Examples.BlazorChat.App.MediatorClasses.Messages;
-using Weltmeyer.RabbitMediator.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
 
 namespace Examples.BlazorChat.App.MediatorClasses.Consumers;
 

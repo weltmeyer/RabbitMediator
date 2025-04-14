@@ -1,4 +1,5 @@
-using Weltmeyer.RabbitMediator.MessageBases;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
+
 
 namespace Weltmeyer.RabbitMediator.TestTool.Messages;
 

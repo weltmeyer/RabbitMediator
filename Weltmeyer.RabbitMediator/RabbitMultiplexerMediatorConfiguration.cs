@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using RabbitMQ.Client;
-using Weltmeyer.RabbitMediator.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
 
 namespace Weltmeyer.RabbitMediator;
 

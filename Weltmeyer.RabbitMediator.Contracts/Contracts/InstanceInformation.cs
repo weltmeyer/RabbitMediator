@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Weltmeyer.RabbitMediator.Contracts;
+namespace Weltmeyer.RabbitMediator.Contracts.Contracts;
 
 public record InstanceInformation
 {

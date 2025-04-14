@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Weltmeyer.RabbitMediator.Contracts;
+using Weltmeyer.RabbitMediator.Contracts.Contracts;
 
 namespace Examples.BlazorChat.App;
 

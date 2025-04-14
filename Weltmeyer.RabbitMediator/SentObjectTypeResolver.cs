@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using Weltmeyer.RabbitMediator.MessageBases;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
 namespace Weltmeyer.RabbitMediator;
 

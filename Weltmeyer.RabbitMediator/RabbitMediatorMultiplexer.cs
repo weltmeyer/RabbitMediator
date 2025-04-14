@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
-using Weltmeyer.RabbitMediator.ConsumerBases;
-using Weltmeyer.RabbitMediator.Contracts;
-using Weltmeyer.RabbitMediator.MessageBases;
+using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.Contracts;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
 namespace Weltmeyer.RabbitMediator;
 
