@@ -13,12 +13,14 @@ public class OtherTests
     {
         var builder = Host.CreateApplicationBuilder();
 
-        Assert.Throws<InvalidCastException>(() =>
+        Assert.Throws<ArgumentException>(() =>
         {
-            builder.Services.AddRabbitMediator(
-                consumerTypes:
-                [typeof(int), typeof(TestTargetedMessageConsumer), typeof(TestTargetedRequestConsumer)],
-                connectionString: "unNeeded");
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConsumerTypes =
+                    [typeof(int), typeof(TestTargetedMessageConsumer), typeof(TestTargetedRequestConsumer)];
+                cfg.ConnectionString = "unNeeded";
+            });
         });
     }
 
@@ -42,6 +44,4 @@ public class OtherTests
             });
         }
     }
-
-    
 }

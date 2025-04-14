@@ -10,50 +10,27 @@ namespace Weltmeyer.RabbitMediator;
 
 public static class ExtensionMethods
 {
-    public static void AddRabbitMediator(this IServiceCollection serviceCollection, Assembly consumerAssemby,
-        string connectionString,
-        object? instanceKey = null, bool scoped = false)
-    {
-        AddRabbitMediator(serviceCollection, [consumerAssemby], connectionString, instanceKey, scoped);
-    }
-
-    public static void AddRabbitMediator(this IServiceCollection serviceCollection, Assembly[] consumerAssemblies,
-        string connectionString,
-        object? instanceKey = null, bool scoped = false)
-    {
-        var allConsumerTypes = consumerAssemblies.SelectMany(asm => asm.GetTypes())
-            .Where(t => t.IsAssignableTo(typeof(IConsumer)) && !t.IsAbstract)
-            .ToArray();
-        AddRabbitMediator(serviceCollection, allConsumerTypes, connectionString, instanceKey, scoped);
-    }
-
-
     public static void AddRabbitMediator(this IServiceCollection serviceCollection,
-        Type[] consumerTypes, string connectionString, object? instanceKey = null, bool scoped = false)
+        Action<RabbitMediatorConfiguration> configurationAction)
     {
-        var allConsumerTypes = consumerTypes
-            .Where(t => t.IsAssignableTo(typeof(IConsumer)) && !t.IsAbstract)
-            .ToArray();
+        var configuration = new RabbitMediatorConfiguration();
+        configurationAction(configuration);
 
-        var missingTypes = consumerTypes.Except(allConsumerTypes).ToArray();
-        if (missingTypes.Length > 0)
-        {
-            throw new InvalidCastException(
-                $"These types are no consumers: {string.Join(",", missingTypes.Select(mt => mt.FullName))}");
-        }
+       configuration.Validate();
 
-        
 
-        var lifeTime = scoped ? ServiceLifetime.Scoped : ServiceLifetime.Singleton;
+        var lifeTime = configuration.ServiceLifetime;
 
         if (!serviceCollection.Any(sd =>
-                sd.ServiceType == typeof(RabbitMediatorMultiplexer) && sd.IsKeyedService == (instanceKey != null) &&
-                sd.ServiceKey == instanceKey && sd.Lifetime == lifeTime))
+                sd.ServiceType == typeof(RabbitMediatorMultiplexer) &&
+                sd.IsKeyedService == (configuration.ServiceKey != null) &&
+                sd.ServiceKey == configuration.ServiceKey && sd.Lifetime == lifeTime))
         {
-            var multiplexerDescriptor = new ServiceDescriptor(typeof(RabbitMediatorMultiplexer), instanceKey,
+            var multiplexerDescriptor = new ServiceDescriptor(typeof(RabbitMediatorMultiplexer),
+                configuration.ServiceKey,
                 (provider, key) =>
                 {
-                    var result = new RabbitMediatorMultiplexer(connectionString,
+                    var result = new RabbitMediatorMultiplexer(configuration.ConnectionString,
                         logger: provider.GetRequiredService<ILogger<RabbitMediatorMultiplexer>>());
                     var workerConfiguration =
                         provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
@@ -65,20 +42,19 @@ public static class ExtensionMethods
         }
 
 
-        var instanceDescriptor = new ServiceDescriptor(typeof(IRabbitMediator), instanceKey,
+        var instanceDescriptor = new ServiceDescriptor(typeof(IRabbitMediator), configuration.ServiceKey,
             (provider, key) =>
             {
                 var multiplexer = key == null
                     ? provider.GetRequiredService<RabbitMediatorMultiplexer>()
                     : provider.GetRequiredKeyedService<RabbitMediatorMultiplexer>(key);
 
-                var newMediator = multiplexer.CreateRabbitMediator(provider,
-                    new RabbitMediatorConfiguration { ConsumerTypes = consumerTypes });
+                var newMediator = multiplexer.CreateRabbitMediator(provider,configuration);
                 var workerConfiguration =
                     provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
                 workerConfiguration.Value.PleaseConfigureMediators.Writer.TryWrite(newMediator);
-                Task.Run(() => newMediator.EnsureConfigured());//how to start a service asynchronously?
-                if (!newMediator.WaitReady(TimeSpan.FromSeconds(5)))
+                Task.Run(() => newMediator.EnsureConfigured()); //how to start a service asynchronously?
+                if (!newMediator.WaitReady(configuration.WaitReadyTimeOut))
                 {
                     throw new TimeoutException("Could not created mediator within time!");
                 }

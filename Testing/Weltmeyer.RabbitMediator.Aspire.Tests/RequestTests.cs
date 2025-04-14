@@ -236,10 +236,18 @@ public class RequestTests
 
         using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
         {
-            builder.Services.AddRabbitMediator([typeof(TestTargetedRequestConsumer)],
-                connectionString!, "consumer");
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
-                connectionString!, "sender");
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConsumerTypes =
+                    [typeof(TestTargetedRequestConsumer)];
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "consumer";
+            });
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "sender";
+            });
         });
 
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
@@ -263,8 +271,16 @@ public class RequestTests
 
         using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
         {
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(), connectionString!, "consumer");
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(), connectionString!, "sender");
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "consumer";
+            });
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "sender";
+            });
         });
 
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");

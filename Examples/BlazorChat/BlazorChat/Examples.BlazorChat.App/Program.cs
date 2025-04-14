@@ -12,8 +12,13 @@ builder.Services.AddRazorComponents()
 var connectionString = builder.Configuration.GetConnectionString("rabbitmq");
 if (connectionString is null)
     throw new NullReferenceException("Rabbitmq connectionString not set");
-builder.Services.AddRabbitMediator([typeof(BroadcastChatMessageConsumer), typeof(DirectChatMessageConsumer)],
-    connectionString!, scoped: true);
+builder.Services.AddRabbitMediator(
+    cfg =>
+    {
+        cfg.ConsumerTypes = [typeof(BroadcastChatMessageConsumer), typeof(DirectChatMessageConsumer)];
+        cfg.ConnectionString = connectionString;
+        cfg.ServiceLifetime = ServiceLifetime.Scoped;
+    });
 
 builder.Services.AddSingleton<AppState>();
 builder.Services.AddScoped<UserState>();

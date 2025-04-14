@@ -85,34 +85,30 @@ public class ConfigurationTest
         });
         await mediator.EnsureConfigured();
     }
+
     [Fact]
     void ConfigInvalid_DuplicateRequestConsumer()
     {
         var cfg = new RabbitMediatorConfiguration
         {
-            ConsumerTypes = new[] { typeof(TestTargetedRequestConsumer), typeof(TestTargetedRequestConsumer) }, 
+            ConsumerTypes = [typeof(TestTargetedRequestConsumer), typeof(TestTargetedRequestConsumer)],
         };
 
-        Assert.Throws<InvalidOperationException>(() => cfg.Validate());
-
-
+        Assert.Throws<ArgumentException>(() => cfg.Validate());
     }
-    
+
     [Fact]
     void ConfigInvalid_DuplicateMessageConsumer()
     {
         var cfg = new RabbitMediatorConfiguration
         {
-            ConsumerTypes = new[] { typeof(TestTargetedMessageConsumer), typeof(TestTargetedMessageConsumer) }, 
+            ConsumerTypes = [typeof(TestTargetedMessageConsumer), typeof(TestTargetedMessageConsumer)],
         };
 
-        Assert.Throws<InvalidOperationException>(() => cfg.Validate());
-
-
+        Assert.Throws<ArgumentException>(() => cfg.Validate());
     }
-    
-    
-    
+
+
     [Fact]
     async Task ConfigureBusGood()
     {
@@ -122,8 +118,9 @@ public class ConfigurationTest
         var mediator = mediatorMultiplexer.CreateRabbitMediator(host.Services,
             new RabbitMediatorConfiguration
             {
-                ConsumerTypes = [typeof(TestTargetedRequestConsumer)],DefaultConfirmTimeOut = TimeSpan.FromSeconds(1)
-                ,DefaultResponseTimeOut = TimeSpan.FromSeconds(1)
+                ConsumerTypes = [typeof(TestTargetedRequestConsumer)], 
+                DefaultConfirmTimeOut = TimeSpan.FromSeconds(1),
+                DefaultResponseTimeOut = TimeSpan.FromSeconds(1)
             }
         );
         await mediator.EnsureConfigured();

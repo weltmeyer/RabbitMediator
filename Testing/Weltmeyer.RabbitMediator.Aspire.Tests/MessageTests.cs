@@ -27,8 +27,6 @@ public class MessageTests
 
         var tasks = new List<Task>();
         foreach (var mediator in allMediators)
-            mediator.GetConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages = 0;
-        foreach (var mediator in allMediators)
         {
             tasks.Add(Task.Run(async () =>
             {
@@ -108,8 +106,6 @@ public class MessageTests
         using var testApp = await _aspireHostFixture.PrepareHost();
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
-        foreach (var mediator in allMediators)
-            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         var sender = allMediators.First();
         //var receiver = allMediators.Skip(1).First();
         var message = new TestAnyTargetedMessage();
@@ -129,8 +125,6 @@ public class MessageTests
         using var testApp = await _aspireHostFixture.PrepareHost();
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
-        foreach (var mediator in allMediators)
-            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         var sender = allMediators.First();
         //var receiver = allMediators.Skip(1).First();
         var message = new TestAnyTargetedMessage { CrashPlease = true };
@@ -151,8 +145,6 @@ public class MessageTests
         using var testApp = await _aspireHostFixture.PrepareHost();
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
-        foreach (var mediator in allMediators)
-            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
         var tasks = new List<Task>();
         foreach (var mediator in allMediators)
         {
@@ -179,10 +171,6 @@ public class MessageTests
         using var testApp = await _aspireHostFixture.PrepareHost();
         var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
 
-        foreach (var mediator in allMediators)
-        {
-            mediator.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages = 0;
-        }
 
         var tasks = new List<Task>();
         foreach (var mediator in allMediators)
@@ -254,11 +242,22 @@ public class MessageTests
 
         using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
         {
+            
             builder.Services.AddRabbitMediator(
-                [typeof(TestTargetedMessageConsumer)],
-                connectionString!, "consumer");
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
-                connectionString!, "sender");
+                cfg =>
+                {
+                    cfg.ConsumerTypes.Add(typeof(TestTargetedMessageConsumer));
+                    cfg.ConnectionString = connectionString!;
+                    cfg.ServiceKey = "consumer";
+                });
+
+            builder.Services.AddRabbitMediator(
+                cfg =>
+                {
+                    cfg.ConnectionString = connectionString!;
+                    cfg.ServiceKey = "sender";
+                });
+            
         });
 
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
@@ -280,10 +279,20 @@ public class MessageTests
 
         using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
         {
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
-                connectionString!, "consumer");
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
-                connectionString!, "sender");
+            builder.Services.AddRabbitMediator(
+                cfg =>
+                {
+                    cfg.ConnectionString = connectionString!;
+                    cfg.ServiceKey = "consumer";
+                });
+
+            builder.Services.AddRabbitMediator(
+                cfg =>
+                {
+                    cfg.ConnectionString = connectionString!;
+                    cfg.ServiceKey = "sender";
+                });
+
         });
 
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
@@ -310,13 +319,27 @@ public class MessageTests
 
         using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
         {
-            builder.Services.AddRabbitMediator([typeof(TestBroadCastMessageConsumer)],
-                connectionString!, "receiverWithConsumer");
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
-                connectionString!, "receiverWithoutConsumer");
-            
-            builder.Services.AddRabbitMediator(Array.Empty<Type>(),
-                connectionString!, "sender");
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConsumerTypes.Add(typeof(TestBroadCastMessageConsumer));
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "receiverWithConsumer";
+            });
+
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "receiverWithoutConsumer";
+            });
+
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "sender";
+            });
+        
         });
         
         

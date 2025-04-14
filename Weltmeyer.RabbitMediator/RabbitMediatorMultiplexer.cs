@@ -300,7 +300,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
 
 
-        foreach (var consumerType in configuration.Configuration.ConsumerTypes)
+        foreach (var consumerType in configuration.Configuration.GetAllConsumerTypes())
         {
             var interfaces = consumerType.GetInterfaces();
             var messageConsumerInterfaces = interfaces.Where(i =>
@@ -342,7 +342,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
         var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
 
-        if (!configuration.Configuration.ConsumerTypes.Contains(consumerType))
+        if (!configuration.Configuration.GetAllConsumerTypes().Contains(consumerType))
             return null;
         return configuration.ConsumerInstances.GetOrAdd(consumerType, static (_, serviceProviderAndType) =>
             (IConsumer)ActivatorUtilities.CreateInstance(serviceProviderAndType.ServiceProvider,

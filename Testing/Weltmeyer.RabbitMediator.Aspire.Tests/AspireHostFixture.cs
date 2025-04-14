@@ -5,7 +5,6 @@ using Weltmeyer.RabbitMediator.TestTool.Consumers;
 
 namespace Weltmeyer.RabbitMediator.Aspire.Tests;
 
-
 [CollectionDefinition("AspireHostCollection")]
 public class AspireHostCollection : ICollectionFixture<AspireHostFixture>
 {
@@ -13,9 +12,9 @@ public class AspireHostCollection : ICollectionFixture<AspireHostFixture>
     // to be the place to apply [CollectionDefinition] and all the
     // ICollectionFixture<> interfaces.
 }
+
 public class AspireHostFixture : IDisposable, IAsyncLifetime
 {
-
     public DistributedApplication AspireAppHost { get; private set; } = null!;
 
     private string?[] _mediatorKeys = null!;
@@ -30,7 +29,8 @@ public class AspireHostFixture : IDisposable, IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var appHostBuilder = await DistributedApplicationTestingBuilder.CreateAsync<Weltmeyer_RabbitMediator_Aspire_AppHost>();
+        var appHostBuilder =
+            await DistributedApplicationTestingBuilder.CreateAsync<Weltmeyer_RabbitMediator_Aspire_AppHost>();
         AspireAppHost = await appHostBuilder.BuildAsync();
         var resourceNotificationService = AspireAppHost.Services.GetRequiredService<ResourceNotificationService>();
         Console.WriteLine("Wait for rabbitmq...");
@@ -38,7 +38,7 @@ public class AspireHostFixture : IDisposable, IAsyncLifetime
         await resourceNotificationService.WaitForResourceHealthyAsync("rabbitmq");
         Console.WriteLine("Have Rabbitmq");
 
-        _mediatorKeys = new string[11];//11 seems odd enough to see problems
+        _mediatorKeys = new string[11]; //11 seems odd enough to see problems
         for (int i = 0; i < _mediatorKeys.Length; i++)
         {
             var mediatorKey = $"med#{i}";
@@ -46,20 +46,25 @@ public class AspireHostFixture : IDisposable, IAsyncLifetime
                 mediatorKey = null; //also test for unkeyed
             _mediatorKeys[i] = mediatorKey;
         }
-        
+
         RabbitMQConnectionString = await AspireAppHost.GetConnectionStringAsync("rabbitmq");
     }
-    
+
     public async Task<IHost> PrepareHost()
     {
-        
         return await PrepareEmptyHost((builder) =>
         {
             for (int i = 0; i < MediatorKeys.Length; i++)
             {
                 var mediatorKey = MediatorKeys[i];
-                builder.Services.AddRabbitMediator(typeof(TestTargetedMessageConsumer).Assembly, RabbitMQConnectionString!,
-                    mediatorKey);
+                builder.Services.AddRabbitMediator(
+                    cfg =>
+                    {
+                        cfg.ConsumerAssemblies.Add(typeof(TestTargetedMessageConsumer).Assembly);
+                        cfg.ConnectionString = RabbitMQConnectionString!;
+                        cfg.ServiceKey = mediatorKey;
+                    }
+                );
             }
         });
     }
