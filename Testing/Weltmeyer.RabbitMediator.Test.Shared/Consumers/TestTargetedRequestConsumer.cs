@@ -1,4 +1,4 @@
-using Weltmeyer.RabbitMediator.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
 using Weltmeyer.RabbitMediator.TestTool.Messages;
 
 namespace Weltmeyer.RabbitMediator.TestTool.Consumers;

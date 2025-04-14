@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Weltmeyer.RabbitMediator.Contracts;
+using Weltmeyer.RabbitMediator.Contracts.Contracts;
 using Weltmeyer.RabbitMediator.TestTool;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
 using Weltmeyer.RabbitMediator.TestTool.Messages;

@@ -1,6 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Hosting;
-using Weltmeyer.RabbitMediator.MessageBases;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
 using Weltmeyer.RabbitMediator.TestTool.Messages;
 

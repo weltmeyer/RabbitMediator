@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Examples.BlazorChat.App", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Examples.BlazorChat.AspireHost", "Examples\BlazorChat\AspireHost\Examples.BlazorChat.AspireHost\Examples.BlazorChat.AspireHost.csproj", "{C11F0E4F-BAF9-4BF3-94B8-3855871D4B7D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Weltmeyer.RabbitMediator.Contracts", "Weltmeyer.RabbitMediator.Contracts\Weltmeyer.RabbitMediator.Contracts.csproj", "{366164F7-87D2-49AA-A160-6F326B431970}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,6 +50,10 @@ Global
 		{C11F0E4F-BAF9-4BF3-94B8-3855871D4B7D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C11F0E4F-BAF9-4BF3-94B8-3855871D4B7D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C11F0E4F-BAF9-4BF3-94B8-3855871D4B7D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{366164F7-87D2-49AA-A160-6F326B431970}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{366164F7-87D2-49AA-A160-6F326B431970}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{366164F7-87D2-49AA-A160-6F326B431970}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{366164F7-87D2-49AA-A160-6F326B431970}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{CF5FF318-1C6B-4A1D-8D17-A9F5C63684D1} = {1B206F85-101B-403E-9E88-A19B8F829F26}

@@ -1,4 +1,4 @@
-namespace Weltmeyer.RabbitMediator.MessageBases;
+namespace Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
 internal interface IBroadCastSentObject:ISentObject
 {

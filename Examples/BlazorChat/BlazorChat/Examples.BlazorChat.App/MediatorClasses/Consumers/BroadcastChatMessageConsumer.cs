@@ -4,7 +4,7 @@ namespace Examples.BlazorChat.App.MediatorClasses.Consumers;
 
 public class
     BroadcastChatMessageConsumer(AppState appState, UserState userState)
-    : Weltmeyer.RabbitMediator.ConsumerBases.IMessageConsumer<BroadcastChatMessage>
+    : Weltmeyer.RabbitMediator.Contracts.ConsumerBases.IMessageConsumer<BroadcastChatMessage>
 {
     public async Task Consume(BroadcastChatMessage message)
     {

@@ -1,4 +1,4 @@
-using Weltmeyer.RabbitMediator.Contracts;
+using Weltmeyer.RabbitMediator.Contracts.Contracts;
 
 namespace Weltmeyer.RabbitMediator;
 

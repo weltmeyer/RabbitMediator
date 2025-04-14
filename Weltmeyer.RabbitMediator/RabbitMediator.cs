@@ -2,8 +2,9 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Weltmeyer.RabbitMediator.ConsumerBases;
-using Weltmeyer.RabbitMediator.MessageBases;
+using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
+
 
 namespace Weltmeyer.RabbitMediator;
 

@@ -1,6 +1,4 @@
-using System.Text.Json.Serialization;
-
-namespace Weltmeyer.RabbitMediator.MessageBases;
+namespace Weltmeyer.RabbitMediator.Contracts.MessageBases;
 /// <summary>
 /// Represents a targeted request type that expects a response of type TResponse.
 /// </summary>
