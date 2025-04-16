@@ -81,6 +81,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         where TResponse : Response
         where TRequest : Request<TResponse>
     {
+        using var activity = Telemetry.ActivitySource.StartActivity(ActivityKind.Producer);
         if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
@@ -119,6 +120,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             InstanceScope = rabbitMediator.ScopeId,
         };
         request.CorrelationId = Guid.NewGuid();
+        request.TelemetryTraceParent = Activity.Current?.Id;
+        request.TelemetryTraceState = Activity.Current?.TraceStateString;
+        
+        //request.TelemetryTraceParent=Activity?.Current.Context.
 
         var awaiter = new RequestResponseAwaiter(request.CorrelationId);
         _responseWaiters.TryAdd(awaiter.CorrelationId, awaiter);
@@ -126,6 +131,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
         try
         {
+            activity?.Enrich(request);
             await _serializerHelper.Serialize(request, async data =>
             {
                 await _sendRequestChannel!.BasicPublishAsync(exchangeName, routingKey, true,
@@ -200,6 +206,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         TMessageType message, bool confirmPublish, TimeSpan? confirmTimeOut)
         where TMessageType : Message
     {
+        using var activity = Telemetry.ActivitySource.StartActivity(ActivityKind.Producer);
         if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
@@ -237,7 +244,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         };
         message.CorrelationId = Guid.NewGuid();
         message.RequireAck = confirmPublish;
-
+        message.TelemetryTraceParent = Activity.Current?.Id;
+        message.TelemetryTraceState = Activity.Current?.TraceStateString;
 
         var props = new BasicProperties
         {
@@ -251,7 +259,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 targetAckAwaiter = new TargetAckAwaiter(message.CorrelationId);
                 _targetAckWaiters.TryAdd(targetAckAwaiter.CorrelationId, targetAckAwaiter);
             }
-
+            
+            activity?.Enrich(message);
             await _serializerHelper.Serialize(message, async data =>
             {
                 await _sendMessageChannel!.BasicPublishAsync(exchangeName, routingKey, confirmPublish, props,
@@ -517,9 +526,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 Telemetry.ActivitySource.StartActivity(ActivityKind.Consumer,
                     //parentContext: traceParentContextOkay ? parentActivityContext : default);
                     parentContext: parentActivityContext);
-            activity?.SetTag("SentObject.CorrelationId", sentObject.CorrelationId.ToString());
-            activity?.SetTag("SentObject.TypeName", sentObject.GetType().Name);
-            activity?.SetTag("SentObject.SenderInstance", sentObject.SenderInstance);
+            activity?.Enrich(sentObject);
 #if DEBUG
             Debug.Assert(sentObject != null);
             switch (sentObject)
@@ -689,8 +696,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             _logger?.LogError(ex, "Error in ConsumerInvoke");
             Activity.Current?.SetStatus(ActivityStatusCode.Error);
         }
-
+        
         response.CorrelationId = request.CorrelationId;
+        response.TelemetryTraceParent = Activity.Current?.Id;
+        response.TelemetryTraceState = Activity.Current?.TraceStateString;
         response.SenderInstance = new InstanceInformation()
         {
             InstanceScope = mediator.ScopeId,
@@ -836,7 +845,6 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
-        Task.Run(this.DisposeAsync).GetAwaiter().GetResult();//baaaaaaah
-        
+        Task.Run(this.DisposeAsync).GetAwaiter().GetResult(); //baaaaaaah
     }
 }

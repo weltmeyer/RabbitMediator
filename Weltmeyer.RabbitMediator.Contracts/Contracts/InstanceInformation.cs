@@ -30,4 +30,9 @@ public record InstanceInformation
     }
 
     public static readonly InstanceInformation Empty = new(Guid.Empty, Guid.Empty);
+
+    public override string ToString()
+    {
+        return $"{InstanceId}:{InstanceScope}";
+    }
 }

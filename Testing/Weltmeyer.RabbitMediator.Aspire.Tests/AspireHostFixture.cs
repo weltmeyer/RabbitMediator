@@ -72,6 +72,8 @@ public class AspireHostFixture : IDisposable, IAsyncLifetime
     public async Task<IHost> PrepareEmptyHost(Action<IHostApplicationBuilder> builderAction)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+        builder.AddServiceDefaults();
+        builder.Services.AddRabbitMediatorTelemetry();
         builderAction(builder);
         var testApp = builder.Build();
         await testApp.StartAsync();

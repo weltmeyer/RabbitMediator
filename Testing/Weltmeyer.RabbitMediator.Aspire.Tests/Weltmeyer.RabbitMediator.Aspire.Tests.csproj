@@ -31,6 +31,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\..\Weltmeyer.RabbitMediator.Aspire.ServiceDefaults\Weltmeyer.RabbitMediator.Aspire.ServiceDefaults.csproj" />
       <ProjectReference Include="..\..\Weltmeyer.RabbitMediator\Weltmeyer.RabbitMediator.csproj" />
       <ProjectReference Include="..\Weltmeyer.RabbitMediator.Aspire.AppHost\Weltmeyer.RabbitMediator.Aspire.AppHost.csproj" />
       <ProjectReference Include="..\Weltmeyer.RabbitMediator.Test.Shared\Weltmeyer.RabbitMediator.Test.Shared.csproj" />
