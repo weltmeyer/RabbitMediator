@@ -76,7 +76,7 @@ public static class ExtensionMethods
         }
     }
 
-    public static void AddRabbitMediatorTelemetry(IServiceCollection serviceCollection)
+    public static void AddRabbitMediatorTelemetry(this IServiceCollection serviceCollection)
     {
         serviceCollection.AddOpenTelemetry().WithTracing(t => t.AddSource(Telemetry.ActivitySource.Name));
     }
