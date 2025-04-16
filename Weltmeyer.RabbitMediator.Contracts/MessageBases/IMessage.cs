@@ -7,9 +7,11 @@ public abstract class Message : IMessage
 {
     [JsonInclude] public InstanceInformation SenderInstance { get; internal set; } = null!;
     [JsonInclude] public bool RequireAck { get; internal set; }
-    
+
     [JsonInclude] public Guid CorrelationId { get; internal set; }
 
+    [JsonInclude] public string? TelemetryTraceParent { get; internal set; }
+    [JsonInclude] public string? TelemetryTraceState { get; internal set; }
 }
 
 internal interface IMessage : ISentObject

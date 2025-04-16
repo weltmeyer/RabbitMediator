@@ -56,7 +56,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<Guid, RequestResponseAwaiter> _responseWaiters = new();
 
 
-    private List<RabbitMultiplexerMediatorConfiguration> RabbitMultiplexerMediatorConfigurations = new();
+    private readonly List<RabbitMultiplexerMediatorConfiguration> _rabbitMultiplexerMediatorConfigurations = new();
 
 
     public RabbitMediatorMultiplexer(string connectionString, ushort consumerDispatchConcurrency = 10,
@@ -90,7 +90,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                  targetedMessage.TargetInstance.InstanceScope == Guid.Empty))
                 throw new InvalidOperationException("TargetId not set!");
         }
-        var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+        var configuration = _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
 
         await EnsureReceiver(rabbitMediator, typeof(TResponse));
         var routingKey = request switch
@@ -262,7 +262,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             if (confirmPublish)
             {
                 var configuration =
-                    RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+                    _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
                 var timeOutTask = Task.Delay(confirmTimeOut ?? configuration.Configuration.DefaultConfirmTimeOut);
                 var ackMsgTask = targetAckAwaiter!.TaskCompletionSource.Task;
                 var waitResult = await Task.WhenAny(timeOutTask, ackMsgTask);
@@ -297,7 +297,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         var iMessageConsumerType = typeof(IMessageConsumer<>);
         var iRequestConsumerType = typeof(IRequestConsumer<,>);
 
-        var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+        var configuration = _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
 
 
         foreach (var consumerType in configuration.Configuration.GetAllConsumerTypes())
@@ -330,7 +330,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     {
         configuration.Validate();
         var newMediator = new RabbitMediator(this);
-        RabbitMultiplexerMediatorConfigurations.Add(
+        _rabbitMultiplexerMediatorConfigurations.Add(
             new RabbitMultiplexerMediatorConfiguration(newMediator, configuration, serviceProvider));
         return newMediator;
     }
@@ -340,7 +340,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         if (!consumerType.IsAssignableTo(typeof(IConsumer)))
             throw new ArgumentException($"The type {consumerType.FullName} does not implement {nameof(IConsumer)}");
 
-        var configuration = RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+        var configuration = _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
 
         if (!configuration.Configuration.GetAllConsumerTypes().Contains(consumerType))
             return null;
@@ -353,7 +353,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     internal async Task DisposeRabbitMediatorConnection(RabbitMediator mediator)
     {
         var configuration =
-            this.RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
+            this._rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
         foreach (var consumerKv in configuration.ConsumerTags)
         {
             await consumerKv.Value.BasicCancelAsync(consumerKv.Key, true);
@@ -374,7 +374,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
         var typeName = sentObjectType.FullName!;
 
-        var configuration = RabbitMultiplexerMediatorConfigurations.First(x => x.RabbitMediator == mediatorT);
+        var configuration = _rabbitMultiplexerMediatorConfigurations.First(x => x.RabbitMediator == mediatorT);
 
         if (configuration.RegisteredConsumerTypes.Contains(sentObjectType))
             return;
@@ -502,6 +502,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     {
         if (mediator.Disposed)
             return false;
+
         try
         {
             _logger?.LogTrace(
@@ -509,6 +510,16 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 eventArgs.Exchange, eventArgs.RoutingKey, eventArgs.Body.Length);
 
             var sentObject = await _serializerHelper.Deserialize<ISentObject>(eventArgs.Body);
+
+            ActivityContext.TryParse(sentObject.TelemetryTraceParent, sentObject.TelemetryTraceState,
+                out var parentActivityContext);
+            using var activity =
+                Telemetry.ActivitySource.StartActivity(ActivityKind.Consumer,
+                    //parentContext: traceParentContextOkay ? parentActivityContext : default);
+                    parentContext: parentActivityContext);
+            activity?.SetTag("SentObject.CorrelationId", sentObject.CorrelationId.ToString());
+            activity?.SetTag("SentObject.TypeName", sentObject.GetType().Name);
+            activity?.SetTag("SentObject.SenderInstance", sentObject.SenderInstance);
 #if DEBUG
             Debug.Assert(sentObject != null);
             switch (sentObject)
@@ -525,23 +536,27 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             {
                 case IMessage message:
                 {
+                    activity?.AddEvent(new ActivityEvent("HandleMessage"));
                     var handleResult = await HandleMessage(message, mediator);
                     return handleResult;
                 }
                 case IRequest request:
                 {
+                    activity?.AddEvent(new ActivityEvent("HandleRequest"));
                     var handleResult = await HandleRequest(request, mediator);
                     return handleResult;
                 }
                 default:
                     _logger?.LogError("SentObject of type {SentObjectType} has not been handled.",
                         sentObject.GetType().FullName);
+                    activity?.SetStatus(ActivityStatusCode.Error);
                     break;
             }
         }
         catch (Exception ex)
         {
             _logger?.LogCritical(ex, "Could not work on received object:{EventArgs}", eventArgs);
+
             //Debugger.Break();
         }
 
@@ -575,9 +590,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     private async Task<bool> HandleMessage(IMessage message, RabbitMediator mediator)
     {
         var configuration =
-            RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
+            _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
         if (configuration.SentTypeToConsumerMapping.TryGetValue(message.GetType(), out var consumerType))
         {
+            Activity.Current?.SetTag("ConsumerType", consumerType.FullName);
             var sentObjectAck = new SentObjectAck
             {
                 CorrelationId = message.CorrelationId,
@@ -595,9 +611,11 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             catch (Exception ex)
             {
                 if (ex is TargetInvocationException && ex.InnerException is not null)
-                    ex = ex.InnerException; // dont return the invocation exception. return the actual exception within the worker.
+                    ex = ex.InnerException; // don't return the invocation exception. return the actual exception within the worker.
                 sentObjectAck.Success = false;
                 sentObjectAck.ExceptionData = ExceptionData.FromException(ex);
+                _logger?.LogError(ex, "Error in ConsumerInvoke");
+                Activity.Current?.SetStatus(ActivityStatusCode.Error);
             }
 
             if (message.RequireAck)
@@ -627,19 +645,22 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
             _logger?.LogError("Got a response of type {ResponseType} - but did not expect it",
                 response.GetType().FullName);
+            Activity.Current?.SetStatus(ActivityStatusCode.Error);
         }
 
         _logger?.LogError("No message consumer to handle a message of type {MessageType}", message.GetType().FullName);
+        Activity.Current?.SetStatus(ActivityStatusCode.Error);
         return false;
     }
 
     private async Task<bool> HandleRequest(IRequest request, RabbitMediator mediator)
     {
         var configuration =
-            RabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
+            _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == mediator);
         configuration.SentTypeToConsumerMapping.TryGetValue(request.GetType(), out var consumerType);
 
         Debug.Assert(consumerType != null);
+        Activity.Current?.SetTag("ConsumerType", consumerType.FullName);
         var consumer = GetConsumer(mediator, consumerType);
         //var consumer = serviceScopeContainer.ServiceProvider.GetService(consumerType);
         //consumer ??= Activator.CreateInstance(consumerType);
@@ -663,8 +684,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             response = (Response)Activator.CreateInstance(methodResultType)!;
             response.Success = false;
             if (ex is TargetInvocationException && ex.InnerException is not null)
-                ex = ex.InnerException; // dont return the invocation exception. return the actual exception within the worker.
+                ex = ex.InnerException; // don't return the invocation exception. return the actual exception within the worker.
             response.ExceptionData = ExceptionData.FromException(ex);
+            _logger?.LogError(ex, "Error in ConsumerInvoke");
+            Activity.Current?.SetStatus(ActivityStatusCode.Error);
         }
 
         response.CorrelationId = request.CorrelationId;
@@ -684,13 +707,12 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     }
 
 
-    private bool _configureDone = false;
+    private bool _configureDone;
     private readonly SemaphoreSlim _configureLock = new(1, 1);
 
 
     public async Task Configure(CancellationToken? cancellationToken = null)
     {
-        
         if (_configureDone)
             return;
         await _configureLock.WaitAsync();
@@ -797,8 +819,6 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         {
             _configureLock.Release();
         }
-
-       
     }
 
     public async ValueTask DisposeAsync()
@@ -816,7 +836,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
-        Task.Run(this.DisposeAsync).GetAwaiter().GetResult();
-        ; //baaaaaaah
+        Task.Run(this.DisposeAsync).GetAwaiter().GetResult();//baaaaaaah
+        
     }
 }

@@ -176,6 +176,41 @@ public class RequestTests
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
     }
+    
+    [Fact]
+    public async Task TestAnyTargetedDerivedConsumer()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        foreach (var mediator in allMediators)
+        {
+            mediator.GetConsumerInstance<TestAnyTargetedRequestDerivedConsumer>()!.ReceivedMessages = 0;
+        }
+
+        var tasks = new List<Task>();
+        foreach (var mediator in allMediators)
+        {
+            foreach (var _ in allMediators)
+            {
+                tasks.Add(Task.Run(async () =>
+                {
+                    var message = new TestAnyTargetedRequestForAbstract();
+                    var response = await mediator.Request<TestAnyTargetedRequestForAbstract, TestAnyTargetedResponseForAbstract>(message);
+                    Assert.Equal(message.CorrelationId, response.CorrelationId);
+                    Assert.True(response.Success);
+                }));
+            }
+        }
+
+        await Task.WhenAll(tasks);
+        var requiredMessageCount = allMediators.Length * allMediators.Length;
+        var sumReceived = allMediators.Sum(m =>
+            m.GetConsumerInstance<TestAnyTargetedRequestDerivedConsumer>()!.ReceivedMessages);
+
+        Assert.Equal(requiredMessageCount, sumReceived);
+        await testApp.StopAsync();
+    }
 
 
     [Fact]

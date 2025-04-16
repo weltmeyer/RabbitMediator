@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-
 namespace Weltmeyer.RabbitMediator;
 
 public static class ExtensionMethods
@@ -75,6 +74,11 @@ public static class ExtensionMethods
             serviceCollection.Configure<RabbitMediatorWorkerConfiguration>(opt => { });
             serviceCollection.AddHostedService<RabbitMediatorWorker>();
         }
+    }
+
+    public static void AddRabbitMediatorTelemetry(IServiceCollection serviceCollection)
+    {
+        serviceCollection.AddOpenTelemetry().WithTracing(t => t.AddSource(Telemetry.ActivitySource.Name));
     }
 }
 
