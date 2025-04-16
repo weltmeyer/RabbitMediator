@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>0.0.3.0</Version>
+        <Version>0.0.4.0</Version>
         <Description>Basic mediator implementation in .NET using RabbitMQ as a transport
             Implements asynchronous messaging and request/response between different hosts and processes.</Description>
         <PackageProjectUrl>https://github.com/weltmeyer/RabbitMediator</PackageProjectUrl>
