@@ -122,7 +122,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         request.CorrelationId = Guid.NewGuid();
         request.TelemetryTraceParent = Activity.Current?.Id;
         request.TelemetryTraceState = Activity.Current?.TraceStateString;
-        
+
         //request.TelemetryTraceParent=Activity?.Current.Context.
 
         var awaiter = new RequestResponseAwaiter(request.CorrelationId);
@@ -259,7 +259,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 targetAckAwaiter = new TargetAckAwaiter(message.CorrelationId);
                 _targetAckWaiters.TryAdd(targetAckAwaiter.CorrelationId, targetAckAwaiter);
             }
-            
+
             activity?.Enrich(message);
             await _serializerHelper.Serialize(message, async data =>
             {
@@ -394,7 +394,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         {
             if (configuration.RegisteredConsumerTypes.Contains(sentObjectType))
                 return;
-
+            _logger?.LogInformation("Registering receiver for {ObjectType}", sentObjectType);
 
             string exchangeName;
             QueueDeclareOk? queue;
@@ -696,7 +696,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             _logger?.LogError(ex, "Error in ConsumerInvoke");
             Activity.Current?.SetStatus(ActivityStatusCode.Error);
         }
-        
+
         response.CorrelationId = request.CorrelationId;
         response.TelemetryTraceParent = Activity.Current?.Id;
         response.TelemetryTraceState = Activity.Current?.TraceStateString;

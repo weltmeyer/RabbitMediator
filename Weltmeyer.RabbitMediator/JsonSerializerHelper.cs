@@ -15,17 +15,28 @@ internal class JsonSerializerHelper
         return new JsonSerializerOptions
         {
             TypeInfoResolver = new SentObjectTypeResolver(_knownTypes.ToArray()),
-            
         };
     }
+
+
+    private readonly SemaphoreSlim _typeSemaphore = new(1, 1);
 
     public void AddTypeIfMissing(Type newType)
     {
         if (_knownTypes.Contains(newType))
             return;
-        _knownTypes.Add(newType);
-        _options = RebuildOptions();
-
+        _typeSemaphore.Wait();
+        try
+        {
+            if (_knownTypes.Contains(newType))
+                return;
+            _knownTypes.Add(newType);
+            _options = RebuildOptions();
+        }
+        finally
+        {
+            _typeSemaphore.Release();
+        }
     }
 
     /// <summary>
