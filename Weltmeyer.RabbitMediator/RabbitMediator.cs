@@ -58,21 +58,21 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
 
     internal bool Disposed;
 
-    private bool _configureDone;
+    internal bool ConfigureDone;
 
     private readonly SemaphoreSlim _configureLock = new(1, 1);
     private readonly ManualResetEventSlim _configureEvent = new(false);
     public async Task EnsureConfigured()
     {
-        if (_configureDone)
+        if (ConfigureDone)
             return;//we are done configuring
         await _configureLock.WaitAsync();
         try
         {
-            if (_configureDone)
+            if (ConfigureDone)
                 return; //we are done configuring
             await this._multiplexer.ConfigureRabbitMediator(this);
-            _configureDone = true;
+            ConfigureDone = true;
             _configureEvent.Set();
         }
         finally

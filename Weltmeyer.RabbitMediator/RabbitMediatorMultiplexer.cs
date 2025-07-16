@@ -569,7 +569,11 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     {
         //ack must be sent via source channel
         var consumer = (AsyncEventingBasicConsumer)sender;
-
+        if (!_configureDone || !mediator.ConfigureDone)
+        {//reject until we are ready.
+            await consumer.Channel.BasicRejectAsync(eventArgs.DeliveryTag, true);
+            return;
+        }
         var success = await TryHandleSentObjectReceived(sender, eventArgs, mediator);
         if (success)
         {
