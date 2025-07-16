@@ -464,7 +464,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             var consumer = new AsyncEventingBasicConsumer(useChannel);
             consumer.ReceivedAsync += (obj, args) => HandleSentObjectReceived(obj, args, configuration.RabbitMediator);
             var registeredSem =
-                new SemaphoreSlim(1,
+                new SemaphoreSlim(0,
                     1); //used to make sure then receiver is registered before returning. TaskCompletionSource could also be used?
             consumer.RegisteredAsync += (_, args) =>
             {
@@ -472,12 +472,6 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 registeredSem.Release();
                 return Task.CompletedTask;
             };
-#if DEBUG
-            var gotSem = await registeredSem.WaitAsync(TimeSpan.FromSeconds(10));
-            Debug.Assert(gotSem);
-#else
-            await registeredSem.WaitAsync(TimeSpan.FromSeconds(10));
-#endif
             consumer.UnregisteredAsync += (_, args) =>
             {
                 _logger?.LogWarning("Consumer unregistered {tags}", string.Join(",", args.ConsumerTags));

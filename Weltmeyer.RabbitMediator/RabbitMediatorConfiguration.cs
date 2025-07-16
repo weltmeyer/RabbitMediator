@@ -12,14 +12,18 @@ public class RabbitMediatorConfiguration
     public TimeSpan DefaultResponseTimeOut { get; set; } = TimeSpan.FromSeconds(10);
 
     public List<Assembly> ConsumerAssemblies = new();
-    
+
     public ServiceLifetime ServiceLifetime { get; set; } = ServiceLifetime.Singleton;
 
     public string ConnectionString { get; set; } = null!;
 
     public object? ServiceKey { get; set; } = null;
-    
+
+#if DEBUG
+    public TimeSpan WaitReadyTimeOut { get; set; } = TimeSpan.FromSeconds(100);
+#else
     public TimeSpan WaitReadyTimeOut { get; set; } = TimeSpan.FromSeconds(10);
+#endif
 
     public Type[] GetAllConsumerTypes()
     {
@@ -27,10 +31,10 @@ public class RabbitMediatorConfiguration
             .Where(t => t.IsAssignableTo(typeof(IConsumer)) && !t.IsAbstract)
             .Distinct()
             .ToArray();
-        
+
         var consumerTypes = ConsumerTypes.ToList(); //cloning to avoid configuration mod
         consumerTypes.AddRange(consumerTypesFromAssemblies.Except(consumerTypes));
-        
+
         var allConsumerTypes = consumerTypes
             .Where(t => t.IsAssignableTo(typeof(IConsumer)) && !t.IsAbstract)
             .ToArray();
@@ -38,12 +42,14 @@ public class RabbitMediatorConfiguration
         var missingTypes = consumerTypes.Except(allConsumerTypes).ToArray();
         if (missingTypes.Length > 0)
         {
-            throw new ArgumentException(  $"These types are no consumers: {string.Join(",", missingTypes.Select(mt => mt.FullName))}",nameof(ConsumerTypes));
+            throw new ArgumentException(
+                $"These types are no consumers: {string.Join(",", missingTypes.Select(mt => mt.FullName))}",
+                nameof(ConsumerTypes));
         }
 
         return allConsumerTypes;
     }
-    
+
 
     /// <summary>
     /// Validates the Configuration and throws an ArgumentException if it is not valid.
@@ -51,9 +57,9 @@ public class RabbitMediatorConfiguration
     /// <exception cref="ArgumentException"></exception>
     public void Validate()
     {
-        if(!new []{ServiceLifetime.Singleton,ServiceLifetime.Scoped}.Contains(ServiceLifetime))
-            throw new ArgumentException("ServiceLifetime is not valid",nameof(ServiceLifetime));
-        
+        if (!new[] { ServiceLifetime.Singleton, ServiceLifetime.Scoped }.Contains(ServiceLifetime))
+            throw new ArgumentException("ServiceLifetime is not valid", nameof(ServiceLifetime));
+
         var registeredSentObjectTypes = new HashSet<Type>();
 
         var iMessageConsumerType = typeof(IMessageConsumer<>);
