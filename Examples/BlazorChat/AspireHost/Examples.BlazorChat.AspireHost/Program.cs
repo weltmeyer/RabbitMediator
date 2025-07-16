@@ -10,4 +10,4 @@ var rabbitmq = builder.AddRabbitMQ("rabbitmq", rabbitUser, rabbitPass)
     
 
 builder.AddProject<Examples_BlazorChat_App>("frontend").WithReference(rabbitmq).WaitFor(rabbitmq);
-builder.Build().Run();
+await builder.Build().RunAsync();
