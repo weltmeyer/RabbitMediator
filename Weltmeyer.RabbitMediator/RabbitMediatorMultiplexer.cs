@@ -15,7 +15,7 @@ namespace Weltmeyer.RabbitMediator;
 
 internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 {
-    public Guid InstanceId { get; } = Guid.NewGuid();
+    public string InstanceId { get; } = RabbitMediator.GenerateId();
 
     private readonly ILogger<RabbitMediatorMultiplexer>? _logger;
     private readonly JsonSerializerHelper _serializerHelper = new();
@@ -80,10 +80,16 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     private static string GetTypeName(Type t)
     {
         var useName = t.FullName!;
-        if (useName.Length > 50)
-            useName = t.Name;
-        if (useName.Length > 50)
-            useName = useName.Substring(0, 50);
+
+        if (useName.Length > 100)
+        {
+            //strip namespace
+            var ns = t.Namespace!;
+            useName = useName.Replace(ns, "ns");
+        }
+
+        if (useName.Length > 100)
+            throw new ArgumentException($"Type name too long: {t.FullName!}");
 
         return useName;
     }
@@ -99,8 +105,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
         {
             if (request is ITargetedSentObject targetedMessage &&
-                (targetedMessage.TargetInstance.InstanceId == Guid.Empty ||
-                 targetedMessage.TargetInstance.InstanceScope == Guid.Empty))
+                (targetedMessage.TargetInstance.InstanceId == string.Empty ||
+                 targetedMessage.TargetInstance.InstanceScope == string.Empty))
                 throw new InvalidOperationException("TargetId not set!");
         }
         var configuration = _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
@@ -225,8 +231,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         //await EnsureReceiver(rabbitMediator, typeof(TMessageType));
 
         if (message is ITargetedSentObject targetedMessage &&
-            (targetedMessage.TargetInstance.InstanceId == Guid.Empty ||
-             targetedMessage.TargetInstance.InstanceScope == Guid.Empty))
+            (targetedMessage.TargetInstance.InstanceId == string.Empty ||
+             targetedMessage.TargetInstance.InstanceScope == string.Empty))
             throw new InvalidOperationException("TargetId not set!");
 
 

@@ -8,6 +8,6 @@ internal class SentObjectAck
     public bool Success { get; set; }
     
     public ExceptionData? ExceptionData { get; set; }
-    
-    public Guid Target { get; set; }
+
+    public string Target { get; set; } = string.Empty;
 }

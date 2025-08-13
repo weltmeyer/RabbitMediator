@@ -10,8 +10,8 @@ public interface IRabbitMediator
     /// <summary>
     /// The id of this instance, used to identify this instance as a specific sender and receiver of messages and requests/responses 
     /// </summary>
-    public Guid InstanceId { get; }
-    public Guid ScopeId { get; }
+    public string InstanceId { get; }
+    public string ScopeId { get; }
 
     public InstanceInformation GetInstanceInformation() => new() { InstanceId = InstanceId, InstanceScope = ScopeId };
 

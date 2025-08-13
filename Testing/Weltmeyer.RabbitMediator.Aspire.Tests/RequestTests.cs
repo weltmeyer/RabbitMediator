@@ -259,7 +259,7 @@ public class RequestTests
         {
             await allMediators.First().Request<TestTargetedRequest, TestTargetedResponse>(new TestTargetedRequest
             {
-                TargetInstance = new(Guid.Empty, Guid.Empty),
+                TargetInstance = new(string.Empty, string.Empty),
             });
         });
     }

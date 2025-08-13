@@ -11,12 +11,20 @@ namespace Weltmeyer.RabbitMediator;
 internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
 {
 
-
+    internal static string GenerateId() => string.Join("", Enumerable.Repeat(0, 10).Select(n =>
+    Random.Shared.Next(1, 3)switch
+    {
+        1 => (char)Random.Shared.Next(48, 58),
+        2 => (char)Random.Shared.Next(65, 91),
+        _ => (char)Random.Shared.Next(97, 123)
+    }
+    ));
+    
     internal RabbitMediator(RabbitMediatorMultiplexer multiplexer)
     {
         _multiplexer = multiplexer;
     }
-    public Guid InstanceId => _multiplexer.InstanceId;
+    public string InstanceId => _multiplexer.InstanceId;
 
 
     public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
@@ -49,7 +57,7 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
         return this._multiplexer.GetConsumer(this,consumerType);
     }
 
-    public Guid ScopeId { get; } = Guid.NewGuid();
+    public string ScopeId { get; } = GenerateId();
 
 
 

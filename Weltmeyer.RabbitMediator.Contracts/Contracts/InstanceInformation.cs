@@ -9,15 +9,15 @@ public record InstanceInformation
     }
 
     [JsonConstructor]
-    internal InstanceInformation(Guid instanceId, Guid instanceScope)
+    internal InstanceInformation(string instanceId, string instanceScope)
     {
         this.InstanceId = instanceId;
         this.InstanceScope = instanceScope;
     }
 
-    [JsonInclude] public Guid InstanceId { get; init; }
+    [JsonInclude] public string InstanceId { get; init; }
 
-    [JsonInclude] public Guid InstanceScope { get; init; }
+    [JsonInclude] public string InstanceScope { get; init; }
 
     public virtual bool Equals(InstanceInformation? other)
     {
@@ -29,7 +29,7 @@ public record InstanceInformation
         return HashCode.Combine(InstanceId, InstanceScope);
     }
 
-    public static readonly InstanceInformation Empty = new(Guid.Empty, Guid.Empty);
+    public static readonly InstanceInformation Empty = new(string.Empty, string.Empty);
 
     public override string ToString()
     {

@@ -203,7 +203,7 @@ public class MessageTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
             await allMediators.First().Send(new TestTargetedMessage
-                { TargetInstance = new InstanceInformation(Guid.Empty, Guid.Empty) });
+                { TargetInstance = new InstanceInformation(string.Empty, string.Empty) });
         });
     }
 
@@ -215,7 +215,7 @@ public class MessageTests
 
         var result =
             await allMediators.First().Send(new TestTargetedMessage
-                { TargetInstance = new InstanceInformation(Guid.NewGuid(), Guid.NewGuid()) }); //should fail
+                { TargetInstance = new InstanceInformation(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()) }); //should fail
         Assert.False(result.Success);
         Assert.True(result.SendFailure);
     }
@@ -229,7 +229,7 @@ public class MessageTests
         var result = await allMediators.First()
             .Send(new TestTargetedMessage
                 {
-                    TargetInstance = new InstanceInformation(Guid.NewGuid(), Guid.NewGuid())
+                    TargetInstance = new InstanceInformation(Guid.NewGuid().ToString(), Guid.NewGuid().ToString())
                 },
                 confirmPublish: false);
         Assert.True(result.Success);
@@ -304,7 +304,7 @@ public class MessageTests
             TargetInstance = new InstanceInformation
             {
                 InstanceId = consumer.InstanceId,
-                InstanceScope = Guid.NewGuid()
+                InstanceScope = Guid.NewGuid().ToString()
             }
         });
         Assert.False(sendResult.Success);
