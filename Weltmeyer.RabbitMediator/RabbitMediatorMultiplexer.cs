@@ -75,6 +75,18 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         }
     }
 
+    private static string GetTypeName<TType>() => GetTypeName(typeof(TType));
+
+    private static string GetTypeName(Type t)
+    {
+        var useName = t.FullName!;
+        if (useName.Length > 50)
+            useName = t.Name;
+        if (useName.Length > 50)
+            useName = useName.Substring(0, 50);
+
+        return useName;
+    }
 
     internal async Task<TResponse> Request<TRequest, TResponse>(RabbitMediator rabbitMediator,
         TRequest request, TimeSpan? responseTimeOut)
@@ -103,7 +115,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             _ => throw new ArgumentException("Invalid message type")
         };
 
-        var typeName = typeof(TRequest).FullName;
+        var typeName = GetTypeName<TRequest>();
 
         var exchangeName = request switch
         {
@@ -227,7 +239,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             _ => throw new ArgumentException("Invalid message type")
         };
 
-        var typeName = typeof(TMessageType).FullName;
+        var typeName = GetTypeName<TMessageType>();
 
         var exchangeName = message switch
         {
@@ -381,7 +393,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         if (mediatorT.Disposed)
             return;
 
-        var typeName = sentObjectType.FullName!;
+        var typeName = GetTypeName(sentObjectType);
 
         var configuration = _rabbitMultiplexerMediatorConfigurations.First(x => x.RabbitMediator == mediatorT);
 
@@ -417,9 +429,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             {
                 exchangeName = TargetedExchangeName + KeySeparator + typeName;
                 await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false);
-
+                var queueName =
+                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{configuration.RabbitMediator.ScopeId}";
                 queue = await useChannel.QueueDeclareAsync(
-                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{configuration.RabbitMediator.ScopeId}",
+                    queueName,
                     durable: false, exclusive: true,
                     autoDelete: true);
                 configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
@@ -432,8 +445,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Fanout, false,
                     false);
 
+                var queueName =
+                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{configuration.RabbitMediator.ScopeId}";
                 queue = await useChannel.QueueDeclareAsync(
-                    $"{inputQueuePrefix}{KeySeparator}{typeName}{KeySeparator}{InstanceId}{KeySeparator}{configuration.RabbitMediator.ScopeId}",
+                    queueName,
                     durable: false, exclusive: true,
                     autoDelete: false);
                 configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
@@ -445,9 +460,9 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 exchangeName = AnyTargetedExchangeName + KeySeparator + typeName;
                 await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false,
                     false);
-
+                var queueName = $"{SharedQueuePrefix}{KeySeparator}{typeName}";
                 queue = await useChannel.QueueDeclareAsync(
-                    $"{SharedQueuePrefix}{KeySeparator}{typeName}",
+                    queueName,
                     durable: false,
                     exclusive: false,
                     autoDelete: false);
@@ -570,10 +585,12 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         //ack must be sent via source channel
         var consumer = (AsyncEventingBasicConsumer)sender;
         if (!_configureDone || !mediator.ConfigureDone)
-        {//reject until we are ready.
+        {
+            //reject until we are ready.
             await consumer.Channel.BasicRejectAsync(eventArgs.DeliveryTag, true);
             return;
         }
+
         var success = await TryHandleSentObjectReceived(sender, eventArgs, mediator);
         if (success)
         {
@@ -706,7 +723,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         response.TargetInstance = request.SenderInstance;
 
         var targetQueue =
-            $"{InputQueuePrefixResponse}{KeySeparator}{response.GetType().FullName}{KeySeparator}{response.TargetInstance.InstanceId}{KeySeparator}{response.TargetInstance.InstanceScope}";
+            $"{InputQueuePrefixResponse}{KeySeparator}{GetTypeName(response.GetType())}{KeySeparator}{response.TargetInstance.InstanceId}{KeySeparator}{response.TargetInstance.InstanceScope}";
         await _serializerHelper.Serialize(response,
             async data => { await _sendResponseChannel!.BasicPublishAsync(string.Empty, targetQueue, data); });
 

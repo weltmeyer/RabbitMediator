@@ -15,7 +15,7 @@ public static class ExtensionMethods
         var configuration = new RabbitMediatorConfiguration();
         configurationAction(configuration);
 
-       configuration.Validate();
+        configuration.Validate();
 
 
         var lifeTime = configuration.ServiceLifetime;
