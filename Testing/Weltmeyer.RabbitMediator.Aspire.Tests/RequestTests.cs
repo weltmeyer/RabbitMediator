@@ -38,7 +38,8 @@ public class RequestTests
         var requiredMessageCount = 0;
         for (int i = 0; i < 1; i++)
         {
-            var response = await requester.Request<TestTargetedRequest, TestTargetedResponse>(message);
+            //var response = await requester.Request<TestTargetedRequest, TestTargetedResponse>(message);
+            var response = await requester.Request(message);
             requiredMessageCount++;
             Assert.True(response.Success);
             Assert.Equal(response.CorrelationId, message.CorrelationId);
@@ -196,7 +197,8 @@ public class RequestTests
                 tasks.Add(Task.Run(async () =>
                 {
                     var message = new TestAnyTargetedRequestForAbstract();
-                    var response = await mediator.Request<TestAnyTargetedRequestForAbstract, TestAnyTargetedResponseForAbstract>(message);
+                    //var response = await mediator.Request<TestAnyTargetedRequestForAbstract, TestAnyTargetedResponseForAbstract>(message);
+                    var response = await mediator.Request(message);
                     Assert.Equal(message.CorrelationId, response.CorrelationId);
                     Assert.True(response.Success);
                 }));

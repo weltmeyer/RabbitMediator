@@ -24,6 +24,22 @@ public class OtherTests
         });
     }
 
+    [Fact]
+    async Task JsonParallelTest()
+    {
+        var helper = new JsonSerializerHelper();
+        var testTypes = new[] { typeof(TestTargetedRequest), typeof(TestTargetedResponse),typeof(TestAnyTargetedMessage),typeof(TestAnyTargetedRequest) };
+        
+        var testObjects=testTypes.Select(t=>Activator.CreateInstance(t)!).ToArray();
+        
+        foreach(var testObject in testObjects)
+            await helper.Serialize(testObject, async data =>
+            {
+                var jsonString = Encoding.UTF8.GetString(data.Span);
+                Assert.Contains(testObject.GetType().FullName!, jsonString);
+            });
+        
+    }
 
     [Fact]
     async Task TestSerializationHelper()

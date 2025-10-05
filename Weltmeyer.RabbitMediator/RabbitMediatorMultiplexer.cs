@@ -94,10 +94,15 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         return useName;
     }
 
-    internal async Task<TResponse> Request<TRequest, TResponse>(RabbitMediator rabbitMediator,
+
+
+    /*internal async Task<TResponse> Request<TRequest, TResponse>(RabbitMediator rabbitMediator,
         TRequest request, TimeSpan? responseTimeOut)
         where TResponse : Response
-        where TRequest : Request<TResponse>
+        where TRequest : Request<TResponse>*/
+    internal async Task<TResponse> Request<TResponse>(RabbitMediator rabbitMediator,
+        Request<TResponse> request, TimeSpan? responseTimeOut)
+        where TResponse : Response
     {
         using var activity = Telemetry.ActivitySource.StartActivity(ActivityKind.Producer);
         if (rabbitMediator.Disposed)
@@ -120,8 +125,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                                       tm.TargetInstance.InstanceScope.ToString(),
             _ => throw new ArgumentException("Invalid message type")
         };
-
-        var typeName = GetTypeName<TRequest>();
+        var typeName= GetTypeName(request.GetType());
+        //var typeName = GetTypeName<TRequest>();
 
         var exchangeName = request switch
         {
@@ -631,8 +636,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             try
             {
                 var consumer = mediator.GetConsumer(consumerType);
+                var consumeMethods=consumerType.GetMethods().Where(m=>m.Name==nameof(IMessageConsumer<Message>.Consume)).ToArray();;
+                var consumeMethod = consumeMethods.First(m => m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType==message.GetType());
 
-                var consumeMethod = consumerType.GetMethod(nameof(IMessageConsumer<Message>.Consume))!;
+                //var consumeMethod = consumerType.GetMethod(nameof(IMessageConsumer<Message>.Consume))!;
                 await (Task)consumeMethod.Invoke(consumer, [message])!;
                 sentObjectAck.Success = true;
             }
@@ -694,9 +701,10 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         //consumer ??= Activator.CreateInstance(consumerType);
         //_requestConsumers.TryGetValue(request.GetType().FullName!, out var consumer);
         Debug.Assert(consumer != null);
-
-        var consumeMethod = consumerType
-            .GetMethod(nameof(IRequestConsumer<Request<Response>, Response>.Consume))!;
+        var consumeMethods=consumerType.GetMethods().Where(m=>m.Name==nameof(IRequestConsumer<Request<Response>, Response>.Consume)).ToArray();;
+        var consumeMethod = consumeMethods.First(m => m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType==request.GetType());
+        /*var consumeMethod = consumerType
+            .GetMethod(nameof(IRequestConsumer<Request<Response>, Response>.Consume),)!;*/
 
         Response response;
         try

@@ -31,7 +31,14 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
         where TRequest : Request<TResponse> where TResponse : Response
     {
         await EnsureConfigured();
-        return await this._multiplexer.Request<TRequest, TResponse>(this, request,
+        return await this._multiplexer.Request(this, request,
+            responseTimeOut);
+    }
+
+    public async Task<TResponse> Request<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null) where TResponse : Response
+    {
+        await EnsureConfigured();
+        return await this._multiplexer.Request(this, request,
             responseTimeOut);
     }
 
