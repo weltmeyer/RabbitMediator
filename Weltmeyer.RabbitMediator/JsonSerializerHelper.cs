@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.Text.Json;
 using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
@@ -8,30 +9,32 @@ namespace Weltmeyer.RabbitMediator;
 internal class JsonSerializerHelper
 {
     private JsonSerializerOptions? _options;
-    private readonly List<Type> _knownTypes = [];
+    private Type[] _knownTypes = [];
 
-    private JsonSerializerOptions RebuildOptions()
+    private JsonSerializerOptions RebuildOptions(Type[] newKnownTypes)
     {
         return new JsonSerializerOptions
         {
-            TypeInfoResolver = new SentObjectTypeResolver(_knownTypes.ToArray()),
+            TypeInfoResolver = new SentObjectTypeResolver(newKnownTypes),
         };
     }
 
 
     private readonly SemaphoreSlim _typeSemaphore = new(1, 1);
 
-    public void AddTypeIfMissing(Type newType)
+    public async Task AddTypeIfMissing(Type newType)
     {
         if (_knownTypes.Contains(newType))
             return;
-        _typeSemaphore.Wait();
+        await _typeSemaphore.WaitAsync();
         try
         {
             if (_knownTypes.Contains(newType))
                 return;
-            _knownTypes.Add(newType);
-            _options = RebuildOptions();
+            var newKnownTypes = _knownTypes.Concat([newType]).ToArray();
+            _options = RebuildOptions(newKnownTypes);
+            _options.MakeReadOnly(true);
+            _knownTypes = newKnownTypes;
         }
         finally
         {
@@ -48,13 +51,47 @@ internal class JsonSerializerHelper
     public async Task Serialize<T>(T objectToSerialize, Func<ReadOnlyMemory<byte>, Task> action)
         where T : class
     {
-        _options ??= RebuildOptions();
+        
         using var stream = new MemoryStream();
         if (objectToSerialize is ISentObject sentObject)
         {
             //this looks strange but is needed for the polymorphic $type setting in the json
-            AddTypeIfMissing(objectToSerialize.GetType());
-            await JsonSerializer.SerializeAsync(stream, sentObject, _options);
+            await AddTypeIfMissing(objectToSerialize.GetType());
+            try
+            {
+                /*   if (_options.TryGetTypeInfo(typeof(ISentObject), out var typeInfo))
+                   {
+                       if (typeInfo.PolymorphismOptions?.DerivedTypes.All(dt =>
+                               dt.DerivedType != objectToSerialize.GetType()) ?? true)
+                       {
+                           Debugger.Break();
+                       }
+                   }
+                   else
+                   {
+                       Debugger.Break();
+                   }*/
+
+                await JsonSerializer.SerializeAsync(stream, sentObject, _options);
+            }
+            catch (NotSupportedException e)
+            {
+                try
+                {
+                    //retry non async.. i cant find the reason why this fails in async SOMETIMES
+                    JsonSerializer.Serialize(stream, sentObject, _options);
+                }
+                catch (Exception)
+                {
+                    if (Debugger.IsAttached)
+                        Debugger.Break();
+                    throw;
+                }
+
+                if (Debugger.IsAttached)
+                    Debugger.Break();
+                throw;
+            }
         }
         else
         {

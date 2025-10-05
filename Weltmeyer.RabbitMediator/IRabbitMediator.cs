@@ -11,6 +11,7 @@ public interface IRabbitMediator
     /// The id of this instance, used to identify this instance as a specific sender and receiver of messages and requests/responses 
     /// </summary>
     public string InstanceId { get; }
+
     public string ScopeId { get; }
 
     public InstanceInformation GetInstanceInformation() => new() { InstanceId = InstanceId, InstanceScope = ScopeId };
@@ -23,9 +24,14 @@ public interface IRabbitMediator
     /// <typeparam name="TRequest"></typeparam>
     /// <typeparam name="TResponse"></typeparam>
     /// <returns></returns>
-    Task<TResponse> Request<TRequest, TResponse>(TRequest request,TimeSpan? responseTimeOut=null)
+    [Obsolete("Use Request<TResponse>(Request<TResponse>,TimeSpan?) instead", false)]
+    Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
         where TResponse : Response
         where TRequest : Request<TResponse>;
+
+    Task<TResponse> Request<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null)
+        where TResponse : Response;
+
 
     /// <summary>
     /// Sends a message without awaiting any specific response.
@@ -42,6 +48,4 @@ public interface IRabbitMediator
 
     T? GetConsumerInstance<T>()
         where T : IConsumer;
-
-
 }
