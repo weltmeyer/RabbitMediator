@@ -74,7 +74,7 @@ internal class JsonSerializerHelper
 
                 await JsonSerializer.SerializeAsync(stream, sentObject, _options);
             }
-            catch (NotSupportedException e)
+            catch (NotSupportedException)
             {
                 try
                 {

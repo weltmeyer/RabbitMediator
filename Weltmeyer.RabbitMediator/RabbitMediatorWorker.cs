@@ -19,7 +19,7 @@ internal class RabbitMediatorWorker(
         return Task.CompletedTask;
     }
 
-    public async Task StartingAsync(CancellationToken cancellationToken)
+    public Task StartingAsync(CancellationToken cancellationToken)
     {
         var optionsInst = options.Value;
         /*foreach (var instanceKey in optionsInst.KeyListNormalMediators)
@@ -42,6 +42,7 @@ internal class RabbitMediatorWorker(
 
         _ = Task.Run(WorkOnMultiplexed);
         _ = Task.Run(WorkOnMultiplexer);
+        return Task.CompletedTask;
     }
 
     private async Task WorkOnMultiplexed()

@@ -25,6 +25,8 @@ internal class RabbitMultiplexerMediatorConfiguration
     public readonly SemaphoreSlim EnsureReceiverSemaphore = new(1, 1);
 
     public readonly ConcurrentDictionary<string, IChannel> OwnedQueues = new();
+    
+    public readonly ConcurrentDictionary<string, (string exchangeName,string exchangeType)> QueueToExchangeBindings = new();
 
     public readonly Dictionary<string, IChannel> ConsumerTags = new();
     public readonly ConcurrentDictionary<Type, IConsumer> ConsumerInstances = new();
