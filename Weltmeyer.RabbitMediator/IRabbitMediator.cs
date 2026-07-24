@@ -17,7 +17,10 @@ public interface IRabbitMediator
     public InstanceInformation GetInstanceInformation() => new() { InstanceId = InstanceId, InstanceScope = ScopeId };
 
     /// <summary>
-    /// Sends a request and waits for the specified response
+    /// Sends a request and waits for the specified response.
+    /// Throws <see cref="RabbitMediatorTimeoutException"/> if no response arrives within the timeout and
+    /// <see cref="RabbitMediatorSendFailureException"/> if the request cannot be published/routed.
+    /// Use <see cref="TryRequest{TResponse}"/> to receive a synthetic response instead of an exception.
     /// </summary>
     /// <param name="request">The actual request</param>
     /// <param name="responseTimeOut"></param>
@@ -29,7 +32,35 @@ public interface IRabbitMediator
         where TResponse : Response
         where TRequest : Request<TResponse>;
 
+    /// <summary>
+    /// Sends a request and waits for the specified response.
+    /// Throws <see cref="RabbitMediatorTimeoutException"/> if no response arrives within the timeout and
+    /// <see cref="RabbitMediatorSendFailureException"/> if the request cannot be published/routed.
+    /// Use <see cref="TryRequest{TResponse}"/> to receive a synthetic response instead of an exception.
+    /// </summary>
     Task<TResponse> Request<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null)
+        where TResponse : Response;
+
+    /// <summary>
+    /// Sends a request and waits for the specified response, returning a synthetic response instead of
+    /// throwing on failure: on timeout the returned response has <see cref="Response.TimedOut"/> set, on a
+    /// publish/routing failure it has <see cref="Response.SendFailure"/> set, both with
+    /// <see cref="Response.Success"/> == false and all other fields at their defaults. Callers MUST inspect
+    /// these flags. Prefer <see cref="Request{TResponse}"/> unless a timeout is an expected, handled outcome.
+    /// </summary>
+    [Obsolete("Use TryRequest<TResponse>(Request<TResponse>,TimeSpan?) instead", false)]
+    Task<TResponse> TryRequest<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
+        where TResponse : Response
+        where TRequest : Request<TResponse>;
+
+    /// <summary>
+    /// Sends a request and waits for the specified response, returning a synthetic response instead of
+    /// throwing on failure: on timeout the returned response has <see cref="Response.TimedOut"/> set, on a
+    /// publish/routing failure it has <see cref="Response.SendFailure"/> set, both with
+    /// <see cref="Response.Success"/> == false and all other fields at their defaults. Callers MUST inspect
+    /// these flags. Prefer <see cref="Request{TResponse}"/> unless a timeout is an expected, handled outcome.
+    /// </summary>
+    Task<TResponse> TryRequest<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null)
         where TResponse : Response;
 
 

@@ -100,7 +100,7 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         where TResponse : Response
         where TRequest : Request<TResponse>*/
     internal async Task<TResponse> Request<TResponse>(RabbitMediator rabbitMediator,
-        Request<TResponse> request, TimeSpan? responseTimeOut)
+        Request<TResponse> request, TimeSpan? responseTimeOut, bool throwOnFailure)
         where TResponse : Response
     {
         using var activity = Telemetry.ActivitySource.StartActivity(ActivityKind.Producer);
@@ -172,6 +172,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
         {
             _logger?.LogWarning(rabbitException, "Publishing failed");
             _responseWaiters.TryRemove(awaiter.CorrelationId, out _);
+            if (throwOnFailure)
+                throw new RabbitMediatorSendFailureException(request.GetType(), request.CorrelationId, rabbitException);
             var publishErrorResponse = Activator.CreateInstance<TResponse>();
             publishErrorResponse.Success = false;
             publishErrorResponse.SendFailure = true;
@@ -210,6 +212,8 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
             useTimeout.TotalMilliseconds, request);
 
         _responseWaiters.TryRemove(awaiter.CorrelationId, out _);
+        if (throwOnFailure)
+            throw new RabbitMediatorTimeoutException(request.GetType(), request.CorrelationId, useTimeout);
         //timed out
         var timedOutResponse = Activator.CreateInstance<TResponse>();
         timedOutResponse.Success = false;
@@ -862,11 +866,18 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                                     exchangeNameAndType.exchangeName);
                                 try
                                 {
+                                    // Fanout exchanges (broadcast) bind on BroadcastRoutingKey; direct exchanges
+                                    // owned by this instance are targeted queues and must be re-bound on the
+                                    // instance/scope routing key, otherwise targeted delivery (incl. every
+                                    // request/response) silently stops after a connection recovery.
+                                    var recoveryRoutingKey = exchangeNameAndType.exchangeType == ExchangeType.Fanout
+                                        ? BroadcastRoutingKey
+                                        : InstanceId + "_" + configuration.RabbitMediator.ScopeId;
                                     await queuePair.Value.ExchangeDeclareAsync(exchangeNameAndType.exchangeName,
                                         exchangeNameAndType.exchangeType, false,
                                         false);
                                     await queuePair.Value.QueueBindAsync(queuePair.Key,
-                                        exchangeNameAndType.exchangeName, BroadcastRoutingKey);
+                                        exchangeNameAndType.exchangeName, recoveryRoutingKey);
                                 }
                                 catch (Exception ex)
                                 {

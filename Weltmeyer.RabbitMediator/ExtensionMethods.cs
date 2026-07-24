@@ -63,6 +63,10 @@ public static class ExtensionMethods
 
         serviceCollection.Add(instanceDescriptor);
 
+        // Record this mediator so the hosted worker can eagerly resolve (and thereby configure) it at startup.
+        serviceCollection.Configure<RabbitMediatorWorkerConfiguration>(opt =>
+            opt.RegisteredMediators.Add((configuration.ServiceKey, lifeTime)));
+
         AddRabbitMediatorWorker(serviceCollection);
     }
 
@@ -89,4 +93,12 @@ internal class RabbitMediatorWorkerConfiguration
 
     public readonly Channel<RabbitMediator> PleaseConfigureMediators =
         Channel.CreateUnbounded<RabbitMediator>();
+
+    /// <summary>
+    /// Every mediator registered via <see cref="ExtensionMethods.AddRabbitMediator"/> (its DI service key and
+    /// lifetime). The hosted worker eagerly resolves the singleton ones at startup so their consumer
+    /// exchanges/queues are declared even if application code never resolves the mediator itself.
+    /// </summary>
+    public readonly System.Collections.Concurrent.ConcurrentBag<(object? serviceKey, ServiceLifetime lifetime)>
+        RegisteredMediators = new();
 }
