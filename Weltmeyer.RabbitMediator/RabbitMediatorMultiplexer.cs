@@ -726,9 +726,14 @@ internal class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 return true;
             }
 
-            _logger?.LogError("Got a response of type {ResponseType} - but did not expect it",
-                response.GetType().FullName);
-            Activity.Current?.SetStatus(ActivityStatusCode.Error);
+            // The waiter is gone because the request already timed out and gave up. That is the normal end of
+            // a timeout, not a fault of its own - the caller was told about it by the timeout exception. Warn
+            // and stop here: falling through logged a second, misleading error claiming no consumer exists for
+            // a response type that never had one, and the two always appeared together.
+            _logger?.LogWarning(
+                "Discarding a late response of type {ResponseType} (correlation {CorrelationId}) - the request " +
+                "already timed out and stopped waiting", response.GetType().FullName, response.CorrelationId);
+            return false;
         }
 
         _logger?.LogError("No message consumer to handle a message of type {MessageType}", message.GetType().FullName);
