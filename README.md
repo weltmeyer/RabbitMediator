@@ -107,11 +107,44 @@ Both of them, and `Send`, take a `CancellationToken`; cancelling always throws.
 | `DefaultResponseTimeOut` | 10 s | how long `Request` waits for a response |
 | `DefaultConfirmTimeOut` | 10 s | how long `Send(confirmPublish: true)` waits for the ack |
 | `ConsumerDispatchConcurrency` | 10 | parallel consumer dispatch per receive channel |
-| `PrefetchCount` | 100 | unacknowledged messages the broker hands out per receive channel, 0 for unlimited |
+| `PrefetchCount` | same as the dispatch concurrency | unacknowledged messages the broker hands out per receive channel, 0 for unlimited |
 | `WaitReadyTimeOut` | 10 s | how long resolving the mediator waits for its topology |
 
 `ConsumerDispatchConcurrency` and `PrefetchCount` apply to the connection, so the first
 mediator registered for a service key decides them for everyone sharing that connection.
+
+Raising `PrefetchCount` above the dispatch concurrency buys throughput and costs deadlines:
+the surplus waits inside your process, where nothing can expire it, instead of in the
+broker's queue, where a request whose timeout ran out is discarded before any consumer
+sees it. The client hands a delivery over only once a dispatcher is free, and that waiting
+is not observable from inside the library.
+
+### Timeouts and cancellation ###
+
+The timeout of a request travels with it. The receiving side measures what is left of it -
+on its own clock, so the hosts do not need to agree about the time - and:
+
+* does not call the consumer at all if the time is already up, answering with a
+  `TimeoutException` in `ExceptionData` instead,
+* cancels the `CancellationToken` handed to the consumer once it runs out.
+
+```csharp
+public class SnapshotConsumer : IRequestConsumer<TakeSnapshotRequest, TakeSnapshotResponse>
+{
+    //implement this overload to be told when the sender has stopped waiting
+    public async Task<TakeSnapshotResponse> Consume(TakeSnapshotRequest request, CancellationToken cancellationToken)
+    {
+        var snapshot = await _camera.Capture(cancellationToken);
+        return new TakeSnapshotResponse { Snapshot = snapshot };
+    }
+
+    public Task<TakeSnapshotResponse> Consume(TakeSnapshotRequest request) => Consume(request, CancellationToken.None);
+}
+```
+
+Implementing only `Consume(TRequest)` keeps working; it just never learns that the sender
+gave up. Cancellation is cooperative - work that does not look at the token runs to its end
+either way. The token is also cancelled when the channel or the mediator shuts down.
 
 ### Telemetry ###
 

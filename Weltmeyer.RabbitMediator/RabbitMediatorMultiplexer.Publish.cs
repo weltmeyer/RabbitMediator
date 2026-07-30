@@ -43,6 +43,7 @@ internal partial class RabbitMediatorMultiplexer
         _responseWaiters.TryAdd(awaiter.CorrelationId, awaiter);
 
         var useTimeout = responseTimeOut ?? configuration.Configuration.DefaultResponseTimeOut;
+        request.TimeOut = useTimeout;
         try
         {
             await EnsureSendExchange(exchangeName, ExchangeTypeFor(request), cancellationToken);

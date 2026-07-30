@@ -159,6 +159,19 @@ public class ConfigurationTest
         });
     }
 
+    /// <summary>
+    /// Left alone, the prefetch window matches the dispatch concurrency: a backlog then waits in the broker's
+    /// queue, which is the only place a request whose timeout ran out can still be expired.
+    /// </summary>
+    [Fact]
+    void PrefetchDefaultsToTheDispatchConcurrency()
+    {
+        var cfg = new RabbitMediatorConfiguration { ConsumerDispatchConcurrency = 4 };
+
+        Assert.Null(cfg.PrefetchCount);
+        Assert.Equal(4, cfg.EffectivePrefetchCount);
+    }
+
     [Fact]
     void ConfigInvalid_PrefetchBelowDispatchConcurrency()
     {

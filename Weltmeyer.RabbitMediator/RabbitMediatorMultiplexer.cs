@@ -64,7 +64,7 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
     public RabbitMediatorMultiplexer(string connectionString, ushort consumerDispatchConcurrency = 10,
         ILogger<RabbitMediatorMultiplexer>? logger = null, IConnection? customConnection = null,
-        ushort prefetchCount = 100)
+        ushort prefetchCount = 10)
     {
         _logger = logger;
         ConsumerDispatchConcurrency = consumerDispatchConcurrency;

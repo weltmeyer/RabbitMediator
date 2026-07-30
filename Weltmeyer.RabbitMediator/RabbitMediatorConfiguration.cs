@@ -28,10 +28,18 @@ public class RabbitMediatorConfiguration
 
     /// <summary>
     /// How many unacknowledged messages the broker hands out per receive channel before waiting. Bounds how
-    /// much of a queue a burst can pull into memory. 0 means unlimited, which is what the client does by
-    /// default. Same connection-wide scope as <see cref="ConsumerDispatchConcurrency"/>.
+    /// much of a queue a burst can pull into memory, and decides where a backlog waits.
+    /// Null, the default, means the same as <see cref="ConsumerDispatchConcurrency"/>: everything the broker
+    /// hands out can be worked on straight away, so a backlog stays in the queue where the broker can expire
+    /// requests whose timeout ran out. A larger window buys throughput, at the price of requests sitting in
+    /// this process past the deadline their sender is waiting on - the client hands them over only when a
+    /// dispatcher frees up, and that wait is not observable here. 0 means unlimited.
+    /// Same connection-wide scope as <see cref="ConsumerDispatchConcurrency"/>.
     /// </summary>
-    public ushort PrefetchCount { get; set; } = 100;
+    public ushort? PrefetchCount { get; set; }
+
+    /// <summary>The prefetch window actually used, resolving the default.</summary>
+    internal ushort EffectivePrefetchCount => PrefetchCount ?? ConsumerDispatchConcurrency;
 
 #if DEBUG
     public TimeSpan WaitReadyTimeOut { get; set; } = TimeSpan.FromSeconds(100);
@@ -78,7 +86,7 @@ public class RabbitMediatorConfiguration
             throw new ArgumentException("ConsumerDispatchConcurrency must be at least 1",
                 nameof(ConsumerDispatchConcurrency));
 
-        if (PrefetchCount != 0 && PrefetchCount < ConsumerDispatchConcurrency)
+        if (PrefetchCount is > 0 && PrefetchCount < ConsumerDispatchConcurrency)
             throw new ArgumentException(
                 "PrefetchCount must be 0 (unlimited) or at least as large as ConsumerDispatchConcurrency, " +
                 "otherwise the dispatchers starve", nameof(PrefetchCount));

@@ -15,6 +15,9 @@ internal static class ConsumerInvoker
     private static readonly ConcurrentDictionary<(Type consumerType, Type sentObjectType), MethodInfo> ConsumeMethods =
         new();
 
+    private static readonly ConcurrentDictionary<(Type consumerType, Type requestType), MethodInfo>
+        RequestConsumeMethods = new();
+
     private static readonly ConcurrentDictionary<Type, PropertyInfo> TaskResultProperties = new();
 
     /// <summary>
@@ -29,8 +32,29 @@ internal static class ConsumerInvoker
                 .First(m => m.GetParameters() is { Length: 1 } parameters &&
                             parameters[0].ParameterType == key.sentObjectType));
 
+    /// <summary>
+    /// The cancellable <c>Consume</c> overload for a request, taken off the interface rather than off the
+    /// consumer class: it has a default implementation, and a class that does not override it has no such
+    /// method of its own. Invoking the interface method dispatches to the override when there is one and to
+    /// the default when there is not.
+    /// </summary>
+    public static MethodInfo GetRequestConsumeMethod(Type consumerType, Type requestType) =>
+        RequestConsumeMethods.GetOrAdd((consumerType, requestType), static key =>
+        {
+            var consumerInterface = key.consumerType.GetInterfaces().First(i =>
+                i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestConsumer<,>) &&
+                i.GetGenericArguments()[0] == key.requestType);
+
+            return consumerInterface.GetMethod(nameof(IRequestConsumer<Request<Response>, Response>.Consume),
+                [key.requestType, typeof(CancellationToken)])!;
+        });
+
     public static Task Invoke(object consumer, MethodInfo consumeMethod, ISentObject sentObject) =>
         (Task)consumeMethod.Invoke(consumer, [sentObject])!;
+
+    public static Task Invoke(object consumer, MethodInfo consumeMethod, ISentObject sentObject,
+        CancellationToken cancellationToken) =>
+        (Task)consumeMethod.Invoke(consumer, [sentObject, cancellationToken])!;
 
     /// <summary>Reads <c>Task&lt;TResponse&gt;.Result</c> off a completed consume task.</summary>
     public static Response GetResponse(Task completedConsumeTask) =>

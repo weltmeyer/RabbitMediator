@@ -173,6 +173,11 @@ internal partial class RabbitMediatorMultiplexer
     private async Task HandleSentObjectReceived(object sender, BasicDeliverEventArgs eventArgs,
         RabbitMediator mediator)
     {
+        // Taken before anything else: with a prefetch window the broker considers the message delivered while
+        // it may still be waiting for a free dispatcher here, and that wait counts against the sender's
+        // timeout just as much as the work itself does.
+        var deliveredAt = Stopwatch.GetTimestamp();
+
         //ack must be sent via source channel
         var consumer = (AsyncEventingBasicConsumer)sender;
         if (!_configureDone || !mediator.ConfigureDone)
@@ -185,7 +190,7 @@ internal partial class RabbitMediatorMultiplexer
             return;
         }
 
-        var success = await TryHandleSentObjectReceived(eventArgs, mediator);
+        var success = await TryHandleSentObjectReceived(eventArgs, mediator, deliveredAt);
         if (success)
         {
             await consumer.Channel.BasicAckAsync(eventArgs.DeliveryTag, false);
@@ -199,7 +204,8 @@ internal partial class RabbitMediatorMultiplexer
         }
     }
 
-    private async Task<bool> TryHandleSentObjectReceived(BasicDeliverEventArgs eventArgs, RabbitMediator mediator)
+    private async Task<bool> TryHandleSentObjectReceived(BasicDeliverEventArgs eventArgs, RabbitMediator mediator,
+        long deliveredAt)
     {
         if (mediator.Disposed)
             return false;
@@ -239,7 +245,7 @@ internal partial class RabbitMediatorMultiplexer
                 case IRequest request:
                 {
                     activity?.AddEvent(new ActivityEvent("HandleRequest"));
-                    return await HandleRequest(request, mediator);
+                    return await HandleRequest(request, mediator, deliveredAt, eventArgs.CancellationToken);
                 }
                 default:
                     _logger?.LogError("SentObject of type {SentObjectType} has not been handled.",
@@ -322,7 +328,8 @@ internal partial class RabbitMediatorMultiplexer
         return false;
     }
 
-    private async Task<bool> HandleRequest(IRequest request, RabbitMediator mediator)
+    private async Task<bool> HandleRequest(IRequest request, RabbitMediator mediator, long deliveredAt,
+        CancellationToken deliveryCancellationToken)
     {
         var configuration = GetConfiguration(mediator);
         configuration.SentTypeToConsumerMapping.TryGetValue(request.GetType(), out var consumerType);
@@ -342,12 +349,32 @@ internal partial class RabbitMediatorMultiplexer
         Activity.Current?.SetTag("ConsumerType", consumerType.FullName);
         var consumer = GetConsumer(mediator, consumerType);
         Debug.Assert(consumer != null);
-        var consumeMethod = ConsumerInvoker.GetConsumeMethod(consumerType, request.GetType());
+        var consumeMethod = ConsumerInvoker.GetRequestConsumeMethod(consumerType, request.GetType());
+
+        var remainingTime = RemainingTime(request, deliveredAt);
+        if (remainingTime <= TimeSpan.Zero)
+        {
+            // The sender stopped waiting before we got to it, so running the consumer would be work nobody
+            // collects. Answer so the failure is named rather than looking like silence.
+            _logger?.LogWarning(
+                "Dropping a request of type {RequestType} (correlation {CorrelationId}): its timeout of " +
+                "{TimeOut} had already elapsed when it reached the consumer",
+                request.GetType().FullName, request.CorrelationId, request.TimeOut);
+            Activity.Current?.SetStatus(ActivityStatusCode.Error);
+            return await RespondWithFailure(request, mediator, ConsumerInvoker.GetResponseType(consumeMethod),
+                new TimeoutException(
+                    $"The request timed out after {request.TimeOut?.TotalMilliseconds:0}ms before a consumer could start on it."));
+        }
+
+        // Cancelled by the sender's timeout, or by the delivery token when the channel or the mediator goes away.
+        using var consumeCancellation = CancellationTokenSource.CreateLinkedTokenSource(deliveryCancellationToken);
+        if (remainingTime != Timeout.InfiniteTimeSpan)
+            consumeCancellation.CancelAfter(remainingTime);
 
         Response response;
         try
         {
-            var runningTask = ConsumerInvoker.Invoke(consumer, consumeMethod, request);
+            var runningTask = ConsumerInvoker.Invoke(consumer, consumeMethod, request, consumeCancellation.Token);
             await runningTask;
             response = ConsumerInvoker.GetResponse(runningTask);
             response.Success = true;
@@ -358,11 +385,35 @@ internal partial class RabbitMediatorMultiplexer
             response.Success = false;
             if (ex is TargetInvocationException && ex.InnerException is not null)
                 ex = ex.InnerException; // don't return the invocation exception. return the actual exception within the worker.
+            if (ex is OperationCanceledException && consumeCancellation.IsCancellationRequested &&
+                !deliveryCancellationToken.IsCancellationRequested)
+                ex = new TimeoutException(
+                    $"The consumer was cancelled after the request timeout of {request.TimeOut?.TotalMilliseconds:0}ms elapsed.");
             response.ExceptionData = ExceptionData.FromException(ex);
             _logger?.LogError(ex, "Error in ConsumerInvoke");
             Activity.Current?.SetStatus(ActivityStatusCode.Error);
         }
 
+        await SendResponse(response, request, mediator);
+        return true;
+    }
+
+    /// <summary>
+    /// What is left of the sender's timeout, measured from the moment this process was handed the message.
+    /// The timeout travels as a duration, so this is one process' clock throughout and cannot be thrown off by
+    /// hosts disagreeing about the time. <see cref="Timeout.InfiniteTimeSpan"/> when the sender sent none.
+    /// </summary>
+    private static TimeSpan RemainingTime(IRequest request, long deliveredAt) =>
+        request.TimeOut is { } timeOut
+            ? timeOut - Stopwatch.GetElapsedTime(deliveredAt)
+            : Timeout.InfiniteTimeSpan;
+
+    private async Task<bool> RespondWithFailure(IRequest request, RabbitMediator mediator, Type responseType,
+        Exception reason)
+    {
+        var response = (Response)Activator.CreateInstance(responseType)!;
+        response.Success = false;
+        response.ExceptionData = ExceptionData.FromException(reason);
         await SendResponse(response, request, mediator);
         return true;
     }
@@ -381,13 +432,8 @@ internal partial class RabbitMediatorMultiplexer
             return false;
         }
 
-        var response = (Response)Activator.CreateInstance(responseType)!;
-        response.Success = false;
-        response.ExceptionData = ExceptionData.FromException(new InvalidOperationException(
+        return await RespondWithFailure(request, mediator, responseType, new InvalidOperationException(
             $"No consumer for requests of type {request.GetType().FullName} is registered on the target instance."));
-
-        await SendResponse(response, request, mediator);
-        return true;
     }
 
     /// <summary>The TResponse of the <see cref="Request{TResponse}"/> the request type derives from.</summary>
