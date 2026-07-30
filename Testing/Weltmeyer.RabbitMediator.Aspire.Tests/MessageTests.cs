@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Weltmeyer.RabbitMediator.Contracts;
 using Weltmeyer.RabbitMediator.Contracts.Contracts;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 using Weltmeyer.RabbitMediator.TestTool;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
 using Weltmeyer.RabbitMediator.TestTool.Messages;
@@ -100,6 +101,65 @@ public class MessageTests
         await testApp.StopAsync();
     }
 
+
+    /// <summary>
+    /// A message handed to Send through a base-typed variable has to reach the same consumer as the same
+    /// message with its concrete static type: the exchange follows the runtime type, not TMessageType.
+    /// </summary>
+    [Fact]
+    public async Task TestTargeted_SentThroughBaseTypedVariable()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        foreach (var mediator in allMediators)
+        {
+            mediator.GetConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages = 0;
+        }
+
+        var sender = allMediators.First();
+        var target = allMediators.Skip(1).First();
+
+        Message message = new TestTargetedMessage { TargetInstance = target.GetInstanceInformation() };
+        var sendResult = await sender.Send(message);
+
+        Assert.True(sendResult.Success);
+        Assert.False(sendResult.SendFailure);
+        Assert.Equal(1, target.GetConsumerInstance<TestTargetedMessageConsumer>()!.ReceivedMessages);
+        await testApp.StopAsync();
+    }
+
+    /// <summary>
+    /// Publishing on a connection that is already closed is a send failure like any other, not an exception
+    /// the caller has to catch on top of inspecting the result.
+    /// </summary>
+    [Fact]
+    public async Task TestSendOnClosedConnectionReportsSendFailure()
+    {
+        using var host = await _aspireHostFixture.PrepareHost();
+        var target = host.Services.GetAllMediators(_aspireHostFixture).First();
+
+        var connectionFactory = new RabbitMQ.Client.ConnectionFactory
+        {
+            Uri = new Uri(_aspireHostFixture.RabbitMQConnectionString!),
+            AutomaticRecoveryEnabled = false,
+        };
+        var connection = await connectionFactory.CreateConnectionAsync();
+        var multiplexer = new RabbitMediatorMultiplexer(_aspireHostFixture.RabbitMQConnectionString!,
+            customConnection: connection);
+        await using var _ = multiplexer;
+        await multiplexer.Configure(CancellationToken.None);
+        var sender = multiplexer.CreateRabbitMediator(host.Services, new RabbitMediatorConfiguration());
+        await sender.EnsureConfigured();
+
+        await connection.CloseAsync(200, "closed by test", TimeSpan.FromSeconds(5), false);
+
+        var sendResult = await sender.Send(new TestTargetedMessage
+            { TargetInstance = target.GetInstanceInformation() });
+
+        Assert.False(sendResult.Success);
+        Assert.True(sendResult.SendFailure);
+    }
 
     [Fact]
     public async Task TestAnyTargeted_Small()

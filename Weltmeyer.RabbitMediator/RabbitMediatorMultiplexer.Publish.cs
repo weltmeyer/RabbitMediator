@@ -95,7 +95,9 @@ internal partial class RabbitMediatorMultiplexer
 
         GuardTargetIsSet(message);
 
-        var typeName = RabbitNaming.TypeName(typeof(TMessageType));
+        // The runtime type decides, not TMessageType: a message handed over through a base-typed variable
+        // would otherwise be published to the exchange of that base type, where nothing is bound.
+        var typeName = RabbitNaming.TypeName(message.GetType());
         var routingKey = RoutingKeyFor(message);
         var exchangeName = ExchangeNameFor(message, typeName);
 
@@ -141,7 +143,9 @@ internal partial class RabbitMediatorMultiplexer
                 return new SendResult { Success = false, TimedOut = true };
             }
         }
-        catch (PublishException ex)
+        // Same breadth as Request: a PublishException means unroutable, but a channel that is closed or gone
+        // is just as much a send failure and used to escape from here as a raw exception.
+        catch (RabbitMQClientException ex)
         {
             _logger?.LogWarning(ex, "Publishing failed");
             if (confirmPublish)
