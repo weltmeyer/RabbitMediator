@@ -86,6 +86,44 @@ public class ConfigurationTest
         await mediator.EnsureConfigured();
     }
 
+    /// <summary>
+    /// The dispatch and prefetch settings used to be constructor-only, so whatever the configuration said was
+    /// silently dropped when the multiplexer was created from DI.
+    /// </summary>
+    [Fact]
+    async Task ConfigurationReachesTheMultiplexer()
+    {
+        using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
+        {
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = _aspireHostFixture.RabbitMQConnectionString!;
+                cfg.ConsumerDispatchConcurrency = 3;
+                cfg.PrefetchCount = 7;
+            });
+        });
+
+        var multiplexer = testApp.Services.GetRequiredService<RabbitMediatorMultiplexer>();
+        Assert.Equal(3, multiplexer.ConsumerDispatchConcurrency);
+        Assert.Equal(7, multiplexer.PrefetchCount);
+    }
+
+    [Fact]
+    void ConfigInvalid_PrefetchBelowDispatchConcurrency()
+    {
+        var cfg = new RabbitMediatorConfiguration { ConsumerDispatchConcurrency = 10, PrefetchCount = 5 };
+
+        Assert.Throws<ArgumentException>(() => cfg.Validate());
+    }
+
+    [Fact]
+    void ConfigValid_UnlimitedPrefetch()
+    {
+        var cfg = new RabbitMediatorConfiguration { ConsumerDispatchConcurrency = 10, PrefetchCount = 0 };
+
+        cfg.Validate();
+    }
+
     [Fact]
     void ConfigInvalid_DuplicateRequestConsumer()
     {

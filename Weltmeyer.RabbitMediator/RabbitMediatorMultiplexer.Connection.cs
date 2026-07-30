@@ -142,10 +142,20 @@ internal partial class RabbitMediatorMultiplexer
             publisherConfirmationsEnabled: true,
             publisherConfirmationTrackingEnabled: true));
 
-        Task<IChannel> CreateReceiveChannel() => connection.CreateChannelAsync(new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false,
-            consumerDispatchConcurrency: _consumerDispatchConcurrency));
+        async Task<IChannel> CreateReceiveChannel()
+        {
+            var channel = await connection.CreateChannelAsync(new CreateChannelOptions(
+                publisherConfirmationsEnabled: false,
+                publisherConfirmationTrackingEnabled: false,
+                consumerDispatchConcurrency: ConsumerDispatchConcurrency));
+
+            // Without a prefetch limit the broker pushes as much of a queue as it has, so a burst is bounded
+            // only by this process' memory.
+            if (PrefetchCount > 0)
+                await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: PrefetchCount, global: false);
+
+            return channel;
+        }
 
         Task<IChannel> CreateAckChannel() => connection.CreateChannelAsync(new CreateChannelOptions(
             publisherConfirmationsEnabled: false,

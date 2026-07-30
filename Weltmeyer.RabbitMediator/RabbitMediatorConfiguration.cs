@@ -19,6 +19,20 @@ public class RabbitMediatorConfiguration
 
     public object? ServiceKey { get; set; } = null;
 
+    /// <summary>
+    /// How many received messages one receive channel dispatches to consumers in parallel.
+    /// Applies to the connection this mediator lives on, so the first mediator registered for a given
+    /// connection (service key) decides it for the ones sharing that connection.
+    /// </summary>
+    public ushort ConsumerDispatchConcurrency { get; set; } = 10;
+
+    /// <summary>
+    /// How many unacknowledged messages the broker hands out per receive channel before waiting. Bounds how
+    /// much of a queue a burst can pull into memory. 0 means unlimited, which is what the client does by
+    /// default. Same connection-wide scope as <see cref="ConsumerDispatchConcurrency"/>.
+    /// </summary>
+    public ushort PrefetchCount { get; set; } = 100;
+
 #if DEBUG
     public TimeSpan WaitReadyTimeOut { get; set; } = TimeSpan.FromSeconds(100);
 #else
@@ -59,6 +73,15 @@ public class RabbitMediatorConfiguration
     {
         if (!new[] { ServiceLifetime.Singleton, ServiceLifetime.Scoped }.Contains(ServiceLifetime))
             throw new ArgumentException("ServiceLifetime is not valid", nameof(ServiceLifetime));
+
+        if (ConsumerDispatchConcurrency == 0)
+            throw new ArgumentException("ConsumerDispatchConcurrency must be at least 1",
+                nameof(ConsumerDispatchConcurrency));
+
+        if (PrefetchCount != 0 && PrefetchCount < ConsumerDispatchConcurrency)
+            throw new ArgumentException(
+                "PrefetchCount must be 0 (unlimited) or at least as large as ConsumerDispatchConcurrency, " +
+                "otherwise the dispatchers starve", nameof(PrefetchCount));
 
         var registeredSentObjectTypes = new HashSet<Type>();
 

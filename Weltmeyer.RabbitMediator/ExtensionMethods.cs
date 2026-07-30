@@ -27,7 +27,9 @@ public static class ExtensionMethods
                 (provider, key) =>
                 {
                     var result = new RabbitMediatorMultiplexer(configuration.ConnectionString,
-                        logger: provider.GetRequiredService<ILogger<RabbitMediatorMultiplexer>>());
+                        consumerDispatchConcurrency: configuration.ConsumerDispatchConcurrency,
+                        logger: provider.GetRequiredService<ILogger<RabbitMediatorMultiplexer>>(),
+                        prefetchCount: configuration.PrefetchCount);
                     var workerConfiguration =
                         provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
                     workerConfiguration.Value.PleaseConfigureMultiplexers.Writer.TryWrite(result);

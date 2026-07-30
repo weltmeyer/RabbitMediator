@@ -21,8 +21,14 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
     private readonly ILogger<RabbitMediatorMultiplexer>? _logger;
     private readonly JsonSerializerHelper _serializerHelper = new();
-    private readonly ushort _consumerDispatchConcurrency;
     private readonly ConnectionFactory? _connectionFactory;
+
+    /// <summary>Parallel consumer dispatch per receive channel.</summary>
+    internal ushort ConsumerDispatchConcurrency { get; }
+
+    /// <summary>Unacknowledged messages the broker hands out per receive channel, 0 for unlimited.</summary>
+    internal ushort PrefetchCount { get; }
+
     private IConnection? _connection;
 
     private IChannel? _sendMessageChannel;
@@ -51,10 +57,12 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
 
     public RabbitMediatorMultiplexer(string connectionString, ushort consumerDispatchConcurrency = 10,
-        ILogger<RabbitMediatorMultiplexer>? logger = null, IConnection? customConnection = null)
+        ILogger<RabbitMediatorMultiplexer>? logger = null, IConnection? customConnection = null,
+        ushort prefetchCount = 100)
     {
         _logger = logger;
-        _consumerDispatchConcurrency = consumerDispatchConcurrency;
+        ConsumerDispatchConcurrency = consumerDispatchConcurrency;
+        PrefetchCount = prefetchCount;
         _connection = customConnection;
         if (_connection == null)
         {

@@ -169,6 +169,51 @@ public class MessageTests
         Assert.True(sendResult.SendFailure);
     }
 
+    /// <summary>
+    /// A burst far larger than the prefetch window still has to arrive completely - the limit only bounds how
+    /// much the broker hands out at once.
+    /// </summary>
+    [Fact]
+    public async Task TestBurstIsDeliveredCompletelyWithSmallPrefetch()
+    {
+        using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
+        {
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConsumerTypes = [typeof(TestAnyTargetedMessageConsumer)];
+                cfg.ConnectionString = _aspireHostFixture.RabbitMQConnectionString!;
+                cfg.ConsumerDispatchConcurrency = 2;
+                cfg.PrefetchCount = 2;
+                cfg.ServiceKey = "burstconsumer";
+            });
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = _aspireHostFixture.RabbitMQConnectionString!;
+                cfg.ServiceKey = "burstsender";
+            });
+        });
+
+        var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("burstconsumer");
+        var sender = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("burstsender");
+        const int messageCount = 100;
+
+        for (var i = 0; i < messageCount; i++)
+        {
+            var sendResult = await sender.Send(new TestAnyTargetedMessage(), confirmPublish: false);
+            Assert.True(sendResult.Success);
+        }
+
+        var received = 0L;
+        for (var i = 0; i < 30 && received < messageCount; i++)
+        {
+            received = consumer.GetConsumerInstance<TestAnyTargetedMessageConsumer>()!.ReceivedMessages;
+            if (received < messageCount)
+                await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        Assert.Equal(messageCount, received);
+    }
+
     [Fact]
     public async Task TestAnyTargeted_Small()
     {
