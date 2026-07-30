@@ -1,3 +1,4 @@
+using RabbitMQ.Client.Exceptions;
 using Weltmeyer.RabbitMediator.Contracts.Contracts;
 using Weltmeyer.RabbitMediator.TestTool;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
@@ -117,13 +118,13 @@ public class RequestTests
 
                         Delay = TimeSpan.FromSeconds(1),
                     };
-                    var response =
+                    var timeOut = TimeSpan.FromSeconds(0.5);
+                    var exception = await Assert.ThrowsAsync<RabbitMediatorTimeoutException>(async () =>
                         await mediator.Request<TestTargetedRequest, TestTargetedResponse>(message,
-                            responseTimeOut: TimeSpan.FromSeconds(0.5));
-                    Assert.Equal(message.CorrelationId, response.CorrelationId);
-                    Assert.Equal(InstanceInformation.Empty, response.SenderInstance);
-                    Assert.False(response.Success);
-                    Assert.True(response.TimedOut);
+                            responseTimeOut: timeOut));
+                    Assert.Equal(message.CorrelationId, exception.CorrelationId);
+                    Assert.Equal(typeof(TestTargetedRequest), exception.RequestType);
+                    Assert.Equal(timeOut, exception.Timeout);
                 }));
             }
         }
@@ -140,6 +141,76 @@ public class RequestTests
 
 
         Assert.Equal(requiredMessageCount, sumReceived);
+        await testApp.StopAsync();
+    }
+
+    [Fact]
+    public async Task TestTargeted_TimedOut_TryRequest()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        foreach (var mediator in allMediators)
+        {
+            mediator.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages = 0;
+        }
+
+        var tasks = new List<Task>();
+        foreach (var mediator in allMediators)
+        {
+            foreach (var target in allMediators)
+            {
+                tasks.Add(Task.Run(async () =>
+                {
+                    var message = new TestTargetedRequest
+                    {
+                        TargetInstance = target.GetInstanceInformation(),
+
+                        Delay = TimeSpan.FromSeconds(1),
+                    };
+                    var response = await mediator.TryRequest(message, responseTimeOut: TimeSpan.FromSeconds(0.5));
+                    Assert.Equal(message.CorrelationId, response.CorrelationId);
+                    Assert.Equal(InstanceInformation.Empty, response.SenderInstance);
+                    Assert.False(response.Success);
+                    Assert.True(response.TimedOut);
+                    Assert.False(response.SendFailure);
+                }));
+            }
+        }
+
+        await Task.WhenAll(tasks);
+        var requiredMessageCount = allMediators.Length * allMediators.Length;
+        var sumReceived = 0L;
+        for (int i = 0; i < 10 && sumReceived < requiredMessageCount; i++)
+        {
+            sumReceived = allMediators.Sum(m =>
+                m.GetConsumerInstance<TestTargetedRequestConsumer>()!.ReceivedMessages);
+            await Task.Delay(TimeSpan.FromSeconds(1)); //need a raise in tests maybe...
+        }
+
+        Assert.Equal(requiredMessageCount, sumReceived);
+        await testApp.StopAsync();
+    }
+
+    [Fact]
+    public async Task TestTargeted_TryRequest_Succeeds()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        var requester = allMediators.First();
+        var responder = allMediators.Skip(1).First();
+
+        var message = new TestTargetedRequest
+        {
+            TargetInstance = responder.GetInstanceInformation(),
+        };
+        var response = await requester.TryRequest(message);
+        Assert.True(response.Success);
+        Assert.False(response.TimedOut);
+        Assert.False(response.SendFailure);
+        Assert.Equal(message.CorrelationId, response.CorrelationId);
+        Assert.Equal(message.TargetInstance, response.SenderInstance);
         await testApp.StopAsync();
     }
 
@@ -323,11 +394,68 @@ public class RequestTests
         var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
         var sender = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("sender");
 
-        var sendResult = await sender.Request<TestTargetedRequest, TestTargetedResponse>(new TestTargetedRequest()
+        var request = new TestTargetedRequest
         {
             TargetInstance = consumer.GetInstanceInformation(),
+        };
+        var exception = await Assert.ThrowsAsync<RabbitMediatorSendFailureException>(async () =>
+            await sender.Request<TestTargetedRequest, TestTargetedResponse>(request));
+        Assert.Equal(typeof(TestTargetedRequest), exception.RequestType);
+        Assert.Equal(request.CorrelationId, exception.CorrelationId);
+        Assert.IsAssignableFrom<RabbitMQClientException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task TestNoReceiverOneSender_TryRequest()
+    {
+        var connectionString = await _aspireHostFixture.AspireAppHost.GetConnectionStringAsync("rabbitmq");
+
+        using var testApp = await _aspireHostFixture.PrepareEmptyHost(builder =>
+        {
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "consumer";
+            });
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = connectionString!;
+                cfg.ServiceKey = "sender";
+            });
         });
+
+        var consumer = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("consumer");
+        var sender = testApp.Services.GetRequiredKeyedService<IRabbitMediator>("sender");
+
+        var request = new TestTargetedRequest
+        {
+            TargetInstance = consumer.GetInstanceInformation(),
+        };
+        var sendResult = await sender.TryRequest(request);
         Assert.False(sendResult.Success);
         Assert.True(sendResult.SendFailure);
+        Assert.False(sendResult.TimedOut);
+        Assert.Equal(request.CorrelationId, sendResult.CorrelationId);
+    }
+
+    [Fact]
+    public async Task TestTryRequest_ObsoleteTwoGenericOverload()
+    {
+        using var testApp = await _aspireHostFixture.PrepareHost();
+        var allMediators = testApp.Services.GetAllMediators(_aspireHostFixture);
+
+        var requester = allMediators.First();
+        var responder = allMediators.Skip(1).First();
+
+        var message = new TestTargetedRequest
+        {
+            TargetInstance = responder.GetInstanceInformation(),
+        };
+#pragma warning disable CS0618 // kept working until the overload is removed
+        var response = await requester.TryRequest<TestTargetedRequest, TestTargetedResponse>(message);
+#pragma warning restore CS0618
+        Assert.True(response.Success);
+        Assert.Equal(message.CorrelationId, response.CorrelationId);
+        await testApp.StopAsync();
     }
 }
