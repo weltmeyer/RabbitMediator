@@ -34,15 +34,23 @@ public class MessageTests
             {
                 var message = new TestBroadcastMessage();
                 var sendResult = await mediator.Send(message);
-                if (!sendResult.Success)
-                    Debugger.Break();
+                Assert.True(sendResult.Success);
             }));
         }
 
         await Task.WhenAll(tasks);
         var requiredMessageCount = allMediators.Length * allMediators.Length;
-        var sumReceived = allMediators.Sum(m =>
-            m.GetConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages);
+
+        // Send returns once *one* consumer acked, so the remaining fanout receivers may still be working.
+        var sumReceived = 0L;
+        for (var i = 0; i < 10 && sumReceived < requiredMessageCount; i++)
+        {
+            sumReceived = allMediators.Sum(m =>
+                m.GetConsumerInstance<TestBroadCastMessageConsumer>()!.ReceivedMessages);
+            if (sumReceived < requiredMessageCount)
+                await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
         Assert.Equal(requiredMessageCount, sumReceived);
         await testApp.StopAsync();
     }
