@@ -1,0 +1,35 @@
+version: 2
+
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # One pull request per group instead of one per package - the OpenTelemetry and
+    # Microsoft.Extensions families only ever make sense to move together anyway.
+    groups:
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry*"
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+      aspire:
+        patterns:
+          - "Aspire.*"
+      testing:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "coverlet.*"
+    ignore:
+      # xunit 3 is a different package (xunit.v3) with a migration of its own, so a major
+      # bump here would only ever be noise.
+      - dependency-name: "xunit*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
