@@ -322,6 +322,43 @@ public class RequestTests
         await testApp.StopAsync();
     }
 
+    /// <summary>
+    /// A request arriving at an instance that has no consumer for it must come back as a failed response, not
+    /// leave the requester waiting for its timeout. The mapping is removed here to produce the situation the
+    /// receive loop used to hit a NullReferenceException on.
+    /// </summary>
+    [Fact]
+    public async Task TestRequestWithoutConsumerAnswersInsteadOfTimingOut()
+    {
+        var connectionString = await _aspireHostFixture.AspireAppHost.GetConnectionStringAsync("rabbitmq");
+
+        var multiplexer = new RabbitMediatorMultiplexer(connectionString!);
+        await using var multiplexerLifetime = multiplexer;
+        await multiplexer.Configure(CancellationToken.None);
+
+        using var testApp = await _aspireHostFixture.PrepareEmptyHost(_ => { });
+        var responder = multiplexer.CreateRabbitMediator(testApp.Services, new RabbitMediatorConfiguration
+        {
+            ConsumerTypes = [typeof(TestTargetedRequestConsumer)],
+        });
+        var requester = multiplexer.CreateRabbitMediator(testApp.Services, new RabbitMediatorConfiguration());
+        await responder.EnsureConfigured();
+        await requester.EnsureConfigured();
+
+        //the queue stays bound, only the mapping to the consumer goes away
+        Assert.True(multiplexer.TryGetConfiguration(responder)!.SentTypeToConsumerMapping
+            .TryRemove(typeof(TestTargetedRequest), out _));
+
+        var response = await requester.Request(new TestTargetedRequest
+        {
+            TargetInstance = ((IRabbitMediator)responder).GetInstanceInformation(),
+        }, responseTimeOut: TimeSpan.FromSeconds(10));
+
+        Assert.False(response.Success);
+        Assert.False(response.TimedOut);
+        Assert.Contains(nameof(TestTargetedRequest), response.ExceptionData?.ErrorMessage);
+    }
+
     [Fact]
     public async Task TestGuidEmptyTarget()
     {

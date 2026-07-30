@@ -11,6 +11,9 @@ namespace Weltmeyer.RabbitMediator;
 /// <summary>The incoming side: declaring receive topology and dispatching what arrives on it.</summary>
 internal partial class RabbitMediatorMultiplexer
 {
+    /// <summary>How long a delivery that arrived before this mediator was ready waits before being requeued.</summary>
+    private static readonly TimeSpan NotReadyRequeueDelay = TimeSpan.FromMilliseconds(100);
+
     /// <summary>
     /// Declares exchange, queue and binding for one sent-object type of one mediator and starts consuming.
     /// Idempotent per mediator and type; returns once the broker confirmed the consumer registration.
@@ -168,7 +171,10 @@ internal partial class RabbitMediatorMultiplexer
         var consumer = (AsyncEventingBasicConsumer)sender;
         if (!_configureDone || !mediator.ConfigureDone)
         {
-            //reject until we are ready.
+            // Requeue until we are ready. The consumer is registered inside the configure run, so deliveries
+            // can arrive during that window - and an immediate requeue makes the broker hand the same message
+            // straight back, spinning both sides. Back off first.
+            await Task.Delay(NotReadyRequeueDelay);
             await consumer.Channel.BasicRejectAsync(eventArgs.DeliveryTag, true);
             return;
         }
@@ -314,7 +320,18 @@ internal partial class RabbitMediatorMultiplexer
         var configuration = GetConfiguration(mediator);
         configuration.SentTypeToConsumerMapping.TryGetValue(request.GetType(), out var consumerType);
 
-        Debug.Assert(consumerType != null);
+        if (consumerType == null)
+        {
+            // A Debug.Assert used to guard this, so a release build dereferenced null, the receive loop logged
+            // the NullReferenceException and dropped the request - leaving the requester to wait out its full
+            // timeout for a failure we already knew about. Answer instead: the response type is part of the
+            // request's own Request<TResponse> base, so we can build one without knowing any consumer.
+            _logger?.LogError("No request consumer to handle a request of type {RequestType}",
+                request.GetType().FullName);
+            Activity.Current?.SetStatus(ActivityStatusCode.Error);
+            return await RespondWithoutConsumer(request, mediator);
+        }
+
         Activity.Current?.SetTag("ConsumerType", consumerType.FullName);
         var consumer = GetConsumer(mediator, consumerType);
         Debug.Assert(consumer != null);
@@ -339,6 +356,48 @@ internal partial class RabbitMediatorMultiplexer
             Activity.Current?.SetStatus(ActivityStatusCode.Error);
         }
 
+        await SendResponse(response, request, mediator);
+        return true;
+    }
+
+    /// <summary>
+    /// Answers a request nobody consumes here, so the requester learns why instead of running into its
+    /// timeout. The response type comes from the request's own <see cref="Request{TResponse}"/> base.
+    /// </summary>
+    private async Task<bool> RespondWithoutConsumer(IRequest request, RabbitMediator mediator)
+    {
+        var responseType = GetResponseTypeOfRequest(request.GetType());
+        if (responseType == null)
+        {
+            _logger?.LogError("Cannot determine the response type of {RequestType}, dropping the request",
+                request.GetType().FullName);
+            return false;
+        }
+
+        var response = (Response)Activator.CreateInstance(responseType)!;
+        response.Success = false;
+        response.ExceptionData = ExceptionData.FromException(new InvalidOperationException(
+            $"No consumer for requests of type {request.GetType().FullName} is registered on the target instance."));
+
+        await SendResponse(response, request, mediator);
+        return true;
+    }
+
+    /// <summary>The TResponse of the <see cref="Request{TResponse}"/> the request type derives from.</summary>
+    private static Type? GetResponseTypeOfRequest(Type requestType)
+    {
+        for (var type = requestType; type != null; type = type.BaseType)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Request<>))
+                return type.GetGenericArguments()[0];
+        }
+
+        return null;
+    }
+
+    /// <summary>Addresses a response at the requester's response queue and publishes it.</summary>
+    private async Task SendResponse(Response response, IRequest request, RabbitMediator mediator)
+    {
         response.CorrelationId = request.CorrelationId;
         response.TelemetryTraceParent = Activity.Current?.Id;
         response.TelemetryTraceState = Activity.Current?.TraceStateString;
@@ -354,7 +413,5 @@ internal partial class RabbitMediatorMultiplexer
             response.TargetInstance.InstanceScope);
         await _serializerHelper.Serialize(response,
             async data => { await _sendResponseChannel!.BasicPublishAsync(string.Empty, targetQueue, data); });
-
-        return true;
     }
 }
