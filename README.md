@@ -56,10 +56,27 @@ public class MyConsumer : IMessageConsumer<MyMessage>, IRequestConsumer<MyReques
 ```
 
 Consumers are created through the service provider, so they can take dependencies.
-An exception thrown inside a consumer is sent back to the caller: as
-`Response.ExceptionData` with `Success == false` for a request, and as
-`SendResult.ExceptionData` for a message sent with `confirmPublish: true`.
 Only one consumer per message type is allowed; registering two throws at startup.
+
+`Response.Success` and `Response.ExceptionData` describe whether the request could be
+answered at all, not what the answer says. They belong to the mediator and a consumer
+cannot set them: an exception thrown inside a consumer arrives as `ExceptionData` with
+`Success == false` (as `SendResult.ExceptionData` for a message sent with
+`confirmPublish: true`). A business "no" is yours to model - put it in a property of your
+own response type:
+
+```csharp
+public class TakeSnapshotResponse : Response
+{
+    public bool CameraReady { get; set; }
+    public string? Snapshot { get; set; }
+}
+```
+
+Check `Success` before reading those properties. Whenever the mediator has to invent a
+response - a consumer threw, nothing consumes the type, or `TryRequest` ran into a timeout
+or a failed publish - it creates an empty instance of your response type, so everything you
+declared on it is at its default and means nothing.
 
 ### Send and request ###
 
