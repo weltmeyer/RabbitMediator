@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using Weltmeyer.RabbitMediator.Contracts.Contracts;
 using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
@@ -41,8 +42,11 @@ internal partial class RabbitMediatorMultiplexer
             var (useChannel, inputQueuePrefix) = ReceiveChannelFor(sentObjectType);
             await _serializerHelper.AddTypeIfMissing(sentObjectType);
 
+            // Declared on their own channel: a rejected declare is a channel level error, and taking the
+            // receive channel down with it would silence every consumer sharing it.
+            var declareChannel = await _topologyChannel!.GetAsync(cancellationToken);
             var (exchangeName, queueName) = await DeclareReceiveTopology(configuration, sentObjectType, typeName,
-                useChannel, inputQueuePrefix, cancellationToken);
+                declareChannel, useChannel, inputQueuePrefix, cancellationToken);
 
             var consumer = new AsyncEventingBasicConsumer(useChannel);
             consumer.ReceivedAsync += async (obj, args) =>
@@ -113,22 +117,23 @@ internal partial class RabbitMediatorMultiplexer
     /// queue shared by all consumers for any-targeted types.
     /// </summary>
     private async Task<(string exchangeName, string queueName)> DeclareReceiveTopology(
-        RabbitMultiplexerMediatorConfiguration configuration, Type sentObjectType, string typeName, IChannel useChannel,
-        string inputQueuePrefix, CancellationToken cancellationToken = default)
+        RabbitMultiplexerMediatorConfiguration configuration, Type sentObjectType, string typeName,
+        IChannel declareChannel, IChannel consumeChannel, string inputQueuePrefix,
+        CancellationToken cancellationToken = default)
     {
         var scopeId = configuration.RabbitMediator.ScopeId;
 
         if (sentObjectType.IsAssignableTo(typeof(ITargetedSentObject)))
         {
             var exchangeName = RabbitNaming.TargetedExchange(typeName);
-            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false,
+            await declareChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false,
                 cancellationToken: cancellationToken);
-            var queue = await useChannel.QueueDeclareAsync(
+            var queue = await declareChannel.QueueDeclareAsync(
                 RabbitNaming.InputQueue(inputQueuePrefix, typeName, InstanceId, scopeId),
                 durable: false, exclusive: true,
                 autoDelete: true, cancellationToken: cancellationToken);
-            configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
-            await useChannel.QueueBindAsync(queue.QueueName, exchangeName,
+            configuration.OwnedQueues.TryAdd(queue.QueueName, consumeChannel);
+            await declareChannel.QueueBindAsync(queue.QueueName, exchangeName,
                 RabbitNaming.InstanceRoutingKey(InstanceId, scopeId), cancellationToken: cancellationToken);
             configuration.QueueToExchangeBindings.TryAdd(queue.QueueName, (exchangeName, ExchangeType.Direct));
             return (exchangeName, queue.QueueName);
@@ -137,14 +142,14 @@ internal partial class RabbitMediatorMultiplexer
         if (sentObjectType.IsAssignableTo(typeof(IBroadCastSentObject)))
         {
             var exchangeName = RabbitNaming.BroadcastExchange(typeName);
-            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Fanout, false, false,
+            await declareChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Fanout, false, false,
                 cancellationToken: cancellationToken);
-            var queue = await useChannel.QueueDeclareAsync(
+            var queue = await declareChannel.QueueDeclareAsync(
                 RabbitNaming.InputQueue(inputQueuePrefix, typeName, InstanceId, scopeId),
                 durable: false, exclusive: true,
                 autoDelete: false, cancellationToken: cancellationToken);
-            configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
-            await useChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.BroadcastRoutingKey,
+            configuration.OwnedQueues.TryAdd(queue.QueueName, consumeChannel);
+            await declareChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.BroadcastRoutingKey,
                 cancellationToken: cancellationToken);
             configuration.QueueToExchangeBindings.TryAdd(queue.QueueName, (exchangeName, ExchangeType.Fanout));
             return (exchangeName, queue.QueueName);
@@ -153,14 +158,33 @@ internal partial class RabbitMediatorMultiplexer
         if (sentObjectType.IsAssignableTo(typeof(IAnyTargetedSentObject)))
         {
             var exchangeName = RabbitNaming.AnyTargetedExchange(typeName);
-            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false,
+            await declareChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false,
                 cancellationToken: cancellationToken);
-            var queue = await useChannel.QueueDeclareAsync(
-                RabbitNaming.SharedQueue(typeName),
-                durable: false,
-                exclusive: false,
-                autoDelete: false, cancellationToken: cancellationToken);
-            await useChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.AnyTargetedRoutingKey,
+            // Durable, unlike the queues owned by a single mediator. It has to outlive its consumers to be
+            // shared by all of them, so it cannot be exclusive - and RabbitMQ 4.3 refuses a queue that is
+            // neither durable nor exclusive by default ("transient_nonexcl_queues is deprecated"), answering
+            // the declare with a connection level error. Durability here is about the queue surviving, not
+            // the messages: those are still published without persistence and are gone after a broker restart.
+            QueueDeclareOk queue;
+            try
+            {
+                queue = await declareChannel.QueueDeclareAsync(
+                    RabbitNaming.SharedQueue(typeName),
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false, cancellationToken: cancellationToken);
+            }
+            catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 406)
+            {
+                // Versions before this one declared the shared queue transient, and a queue cannot change its
+                // durability. Say what has to happen instead of leaving a bare PRECONDITION_FAILED.
+                throw new InvalidOperationException(
+                    $"The queue '{RabbitNaming.SharedQueue(typeName)}' already exists as a transient queue, " +
+                    "declared by an older version of this library. It is declared durable now, which RabbitMQ " +
+                    "4.3 requires for a queue shared between consumers. Delete the existing queue - it holds " +
+                    "only messages that a broker restart would have dropped anyway - and start again.", ex);
+            }
+            await declareChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.AnyTargetedRoutingKey,
                 cancellationToken: cancellationToken);
             configuration.QueueToExchangeBindings.TryAdd(queue.QueueName, (exchangeName, ExchangeType.Direct));
             return (exchangeName, queue.QueueName);

@@ -148,6 +148,21 @@ neither is caught when the consumer is registered, not when the first request ar
 Cancellation is cooperative - work that does not look at the token runs to its end either
 way. The token is also cancelled when the channel or the mediator shuts down.
 
+### Upgrading to 0.0.8 ###
+
+The queue behind an any-targeted type is declared durable from this version on. It is
+shared between consumers, so it cannot be exclusive, and RabbitMQ 4.3 refuses a queue that
+is neither - `transient_nonexcl_queues` is not permitted there by default, and the declare
+fails the whole connection rather than just the request.
+
+A queue cannot change its durability, so if an earlier version already created
+`shared::<your type>` on the broker, delete that queue once before starting the new
+version. It only ever held messages that a broker restart would have dropped anyway. The
+mediator says so explicitly instead of passing on a bare PRECONDITION_FAILED.
+
+Nothing else is affected: the queues belonging to a single instance are exclusive and were
+always allowed.
+
 ### Telemetry ###
 
 ```csharp

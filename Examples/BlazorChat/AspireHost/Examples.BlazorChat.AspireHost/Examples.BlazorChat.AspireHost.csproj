@@ -12,11 +12,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- Pins the MessagePack that Aspire pulls in through StreamJsonRpc: 2.5.192 carries two high
-             severity advisories. Upgrading Aspire itself instead makes the test fixture unusable. -->
-        <PackageReference Include="MessagePack" Version="2.5.302" />
-        <PackageReference Include="Aspire.Hosting.AppHost" Version="13.2.4" />
-        <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.2.4" />
+        <PackageReference Include="Aspire.Hosting.AppHost" Version="13.4.6" />
+        <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.4.6" />
     </ItemGroup>
 
     <ItemGroup>
