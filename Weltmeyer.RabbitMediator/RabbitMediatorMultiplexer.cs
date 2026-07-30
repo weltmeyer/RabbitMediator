@@ -39,7 +39,13 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<Guid, TargetAckAwaiter> _targetAckWaiters = new();
     private readonly ConcurrentDictionary<Guid, RequestResponseAwaiter> _responseWaiters = new();
 
-    private readonly List<RabbitMultiplexerMediatorConfiguration> _rabbitMultiplexerMediatorConfigurations = new();
+    /// <summary>
+    /// The mediators living on this connection and their topology. Concurrent and keyed instead of a scanned
+    /// list: scoped mediators are created from DI factories on any thread while published and received
+    /// messages look their configuration up on every single call.
+    /// </summary>
+    private readonly ConcurrentDictionary<RabbitMediator, RabbitMultiplexerMediatorConfiguration>
+        _rabbitMultiplexerMediatorConfigurations = new();
 
     private readonly ConcurrentDictionary<string, RabbitMediator> _rabbitMediatorInstances = new();
 
@@ -61,14 +67,20 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
     }
 
     private RabbitMultiplexerMediatorConfiguration GetConfiguration(RabbitMediator rabbitMediator) =>
-        _rabbitMultiplexerMediatorConfigurations.First(cfg => cfg.RabbitMediator == rabbitMediator);
+        TryGetConfiguration(rabbitMediator) ??
+        throw new InvalidOperationException(
+            $"The mediator {rabbitMediator.ScopeId} is not (or no longer) registered on this multiplexer.");
+
+    /// <summary>The mediator's topology, or null once it has been disposed.</summary>
+    internal RabbitMultiplexerMediatorConfiguration? TryGetConfiguration(RabbitMediator rabbitMediator) =>
+        _rabbitMultiplexerMediatorConfigurations.GetValueOrDefault(rabbitMediator);
 
     public RabbitMediator CreateRabbitMediator(IServiceProvider serviceProvider,
         RabbitMediatorConfiguration configuration)
     {
         configuration.Validate();
         var newMediator = new RabbitMediator(this);
-        _rabbitMultiplexerMediatorConfigurations.Add(
+        _rabbitMultiplexerMediatorConfigurations.TryAdd(newMediator,
             new RabbitMultiplexerMediatorConfiguration(newMediator, configuration, serviceProvider));
         return newMediator;
     }
@@ -130,36 +142,93 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
                 serviceProviderAndType.consumerType), (configuration.ServiceProvider, consumerType));
     }
 
+    /// <summary>
+    /// Tears down one mediator's topology and forgets it. The multiplexer itself keeps running for the other
+    /// mediators sharing this connection.
+    /// </summary>
     internal async Task DisposeRabbitMediatorConnection(RabbitMediator mediator)
     {
-        var configuration = GetConfiguration(mediator);
+        // Forget the mediator first: nothing published or received afterwards should still find its topology.
+        if (!_rabbitMultiplexerMediatorConfigurations.TryRemove(mediator, out var configuration))
+            return; //already disposed
         _rabbitMediatorInstances.TryRemove(mediator.ScopeId, out _);
-        foreach (var consumerKv in configuration.ConsumerTags)
-        {
-            await consumerKv.Value.BasicCancelAsync(consumerKv.Key, true);
-        }
 
-        foreach (var queue in configuration.OwnedQueues)
+        AbortWaiters(waiter => waiter == mediator);
+
+        // Tolerate a broker that is already gone: now that the synchronous Dispose really awaits this, an
+        // exception in here would escape a using block on a connection that died before shutdown.
+        try
         {
-            await queue.Value.QueueDeleteAsync(queue.Key, false, false, true);
+            foreach (var consumerKv in configuration.ConsumerTags)
+            {
+                await consumerKv.Value.BasicCancelAsync(consumerKv.Key, true);
+            }
+
+            foreach (var queue in configuration.OwnedQueues)
+            {
+                await queue.Value.QueueDeleteAsync(queue.Key, false, false, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Could not fully tear down mediator {ScopeId}", mediator.ScopeId);
         }
     }
 
+    /// <summary>
+    /// Fails every pending request and ack awaiter owned by a mediator the predicate matches. Without this a
+    /// caller awaiting a response would keep waiting for the full timeout after its mediator is already gone.
+    /// </summary>
+    private void AbortWaiters(Func<RabbitMediator, bool> ownerPredicate)
+    {
+        foreach (var (correlationId, waiter) in _responseWaiters)
+        {
+            if (!ownerPredicate(waiter.Owner) || !_responseWaiters.TryRemove(correlationId, out _))
+                continue;
+            waiter.TaskCompletionSource.TrySetException(new ObjectDisposedException(nameof(IRabbitMediator)));
+        }
+
+        foreach (var (correlationId, waiter) in _targetAckWaiters)
+        {
+            if (!ownerPredicate(waiter.Owner) || !_targetAckWaiters.TryRemove(correlationId, out _))
+                continue;
+            waiter.TaskCompletionSource.TrySetException(new ObjectDisposedException(nameof(IRabbitMediator)));
+        }
+    }
+
+    private bool _disposed;
+
     public async ValueTask DisposeAsync()
     {
-        if (_connection != null) await _connection.DisposeAsync();
-        if (_sendMessageChannel != null) await _sendMessageChannel.DisposeAsync();
-        if (_sendRequestChannel != null) await _sendRequestChannel.DisposeAsync();
-        if (_sendResponseChannel != null) await _sendResponseChannel.DisposeAsync();
-        if (_receiveMessageChannel != null) await _receiveMessageChannel.DisposeAsync();
-        if (_receiveRequestChannel != null) await _receiveRequestChannel.DisposeAsync();
-        if (_receiveResponseChannel != null) await _receiveResponseChannel.DisposeAsync();
-        if (_receiveAckChannel != null) await _receiveAckChannel.DisposeAsync();
-        if (_sendAckChannel != null) await _sendAckChannel.DisposeAsync();
+        if (_disposed)
+            return;
+        _disposed = true;
+
+        AbortWaiters(_ => true);
+
+        // Channels before the connection: disposing the connection first closes them underneath, so their own
+        // dispose then runs against a dead connection.
+        foreach (var channel in new[]
+                 {
+                     _sendMessageChannel, _sendRequestChannel, _sendResponseChannel, _receiveMessageChannel,
+                     _receiveRequestChannel, _receiveResponseChannel, _receiveAckChannel, _sendAckChannel
+                 })
+        {
+            if (channel != null)
+                await channel.DisposeAsync();
+        }
+
+        if (_connection != null)
+            await _connection.DisposeAsync();
+
+        _configureLock.Dispose();
     }
 
     public void Dispose()
     {
-        Task.Run(this.DisposeAsync).GetAwaiter().GetResult(); //baaaaaaah
+        // Task.Run to get off any SynchronizationContext, and AsTask so the ValueTask is actually awaited -
+        // Task.Run(this.DisposeAsync) binds to Task.Run(Func<TResult>) and hands back a Task<ValueTask> whose
+        // inner ValueTask nobody ever awaited, which made this method return before disposing anything.
+        Task.Run(() => DisposeAsync().AsTask()).GetAwaiter().GetResult();
     }
 }

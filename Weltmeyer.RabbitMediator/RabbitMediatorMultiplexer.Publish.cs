@@ -37,7 +37,7 @@ internal partial class RabbitMediatorMultiplexer
         request.TelemetryTraceParent = Activity.Current?.Id;
         request.TelemetryTraceState = Activity.Current?.TraceStateString;
 
-        var awaiter = new RequestResponseAwaiter(request.CorrelationId);
+        var awaiter = new RequestResponseAwaiter(request.CorrelationId, rabbitMediator);
         _responseWaiters.TryAdd(awaiter.CorrelationId, awaiter);
 
         var useTimeout = responseTimeOut ?? configuration.Configuration.DefaultResponseTimeOut;
@@ -115,7 +115,7 @@ internal partial class RabbitMediatorMultiplexer
             TargetAckAwaiter? targetAckAwaiter = null;
             if (confirmPublish)
             {
-                targetAckAwaiter = new TargetAckAwaiter(message.CorrelationId);
+                targetAckAwaiter = new TargetAckAwaiter(message.CorrelationId, rabbitMediator);
                 _targetAckWaiters.TryAdd(targetAckAwaiter.CorrelationId, targetAckAwaiter);
             }
 

@@ -24,13 +24,13 @@ internal partial class RabbitMediatorMultiplexer
 
         var configuration = GetConfiguration(mediatorT);
 
-        if (configuration.RegisteredConsumerTypes.Contains(sentObjectType))
+        if (configuration.RegisteredConsumerTypes.ContainsKey(sentObjectType))
             return;
 
         await configuration.EnsureReceiverSemaphore.WaitAsync();
         try
         {
-            if (configuration.RegisteredConsumerTypes.Contains(sentObjectType))
+            if (configuration.RegisteredConsumerTypes.ContainsKey(sentObjectType))
                 return;
             _logger?.LogInformation("Registering receiver for {ObjectType}", sentObjectType);
 
@@ -84,8 +84,8 @@ internal partial class RabbitMediatorMultiplexer
 
             await registeredSem.WaitAsync();
 
-            configuration.RegisteredConsumerTypes.Add(sentObjectType);
-            configuration.ConsumerTags.Add(consumerTag, useChannel);
+            configuration.RegisteredConsumerTypes.TryAdd(sentObjectType, true);
+            configuration.ConsumerTags.TryAdd(consumerTag, useChannel);
         }
         finally
         {

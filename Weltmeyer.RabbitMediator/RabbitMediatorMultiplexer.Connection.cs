@@ -93,7 +93,9 @@ internal partial class RabbitMediatorMultiplexer
             try
             {
                 _logger?.LogInformation("Reconfiguring mediator {mediator}", m.Key);
-                var configuration = GetConfiguration(m.Value);
+                var configuration = TryGetConfiguration(m.Value);
+                if (configuration == null)
+                    continue; //disposed while we were recovering
                 foreach (var queuePair in configuration.OwnedQueues)
                 {
                     if (!configuration.QueueToExchangeBindings.TryGetValue(queuePair.Key, out var exchangeNameAndType))

@@ -6,16 +6,20 @@ namespace Weltmeyer.RabbitMediator;
 
 internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
 {
+    private const string IdCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-    internal static string GenerateId() => string.Join("", Enumerable.Repeat(0, 10).Select(n =>
-    Random.Shared.Next(1, 3)switch
-    {
-        1 => (char)Random.Shared.Next(48, 58),
-        2 => (char)Random.Shared.Next(65, 91),
-        _ => (char)Random.Shared.Next(97, 123)
-    }
-    ));
-    
+    /// <summary>
+    /// A random 10 character id. Only ever used inside exchange, queue and routing key names, so it has to
+    /// stay short and free of AMQP-special characters.
+    /// </summary>
+    internal static string GenerateId() =>
+        string.Create(10, 0, static (span, _) =>
+        {
+            for (var i = 0; i < span.Length; i++)
+                span[i] = IdCharacters[Random.Shared.Next(IdCharacters.Length)];
+        });
+
+
     internal RabbitMediator(RabbitMediatorMultiplexer multiplexer)
     {
         _multiplexer = multiplexer;
@@ -115,6 +119,9 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
-        Task.Run(DisposeAsync).GetAwaiter().GetResult(); //bah! 
+        // Task.Run to get off any SynchronizationContext, and AsTask so the ValueTask is actually awaited -
+        // Task.Run(DisposeAsync) binds to Task.Run(Func<TResult>) and hands back a Task<ValueTask> whose inner
+        // ValueTask nobody ever awaited, which made this method return before the teardown had happened.
+        Task.Run(() => DisposeAsync().AsTask()).GetAwaiter().GetResult();
     }
 }

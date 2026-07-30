@@ -19,18 +19,24 @@ internal class RabbitMultiplexerMediatorConfiguration
 
     public readonly RabbitMediatorConfiguration Configuration;
     public readonly IServiceProvider ServiceProvider;
-    
-    public List<Type> RegisteredConsumerTypes { get; } = new();
+
+    /// <summary>
+    /// Sent-object types this mediator already has a receiver for. Concurrent because the fast path of
+    /// EnsureReceiver reads it before taking <see cref="EnsureReceiverSemaphore"/>, while another type may be
+    /// getting added inside the semaphore.
+    /// </summary>
+    public readonly ConcurrentDictionary<Type, bool> RegisteredConsumerTypes = new();
 
     public readonly SemaphoreSlim EnsureReceiverSemaphore = new(1, 1);
 
     public readonly ConcurrentDictionary<string, IChannel> OwnedQueues = new();
-    
-    public readonly ConcurrentDictionary<string, (string exchangeName,string exchangeType)> QueueToExchangeBindings = new();
 
-    public readonly Dictionary<string, IChannel> ConsumerTags = new();
+    public readonly ConcurrentDictionary<string, (string exchangeName, string exchangeType)> QueueToExchangeBindings =
+        new();
+
+    /// <summary>Consumer tag to the channel it was registered on, needed to cancel them on dispose.</summary>
+    public readonly ConcurrentDictionary<string, IChannel> ConsumerTags = new();
+
     public readonly ConcurrentDictionary<Type, IConsumer> ConsumerInstances = new();
     internal readonly ConcurrentDictionary<Type, Type> SentTypeToConsumerMapping = new();
-
-
 }
