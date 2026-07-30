@@ -290,7 +290,8 @@ internal partial class RabbitMediatorMultiplexer
                 var targetQueue = RabbitNaming.AckQueue(message.SenderInstance.InstanceId);
                 await _serializerHelper.Serialize(sentObjectAck, async data =>
                 {
-                    await _sendAckChannel!.BasicPublishAsync(string.Empty, targetQueue, data);
+                    var ackChannel = await _sendAckChannel!.GetAsync();
+                    await ackChannel.BasicPublishAsync(string.Empty, targetQueue, data);
                 });
             }
 
@@ -418,6 +419,10 @@ internal partial class RabbitMediatorMultiplexer
             RabbitNaming.TypeName(response.GetType()), response.TargetInstance.InstanceId,
             response.TargetInstance.InstanceScope);
         await _serializerHelper.Serialize(response,
-            async data => { await _sendResponseChannel!.BasicPublishAsync(string.Empty, targetQueue, data); });
+            async data =>
+            {
+                var responseChannel = await _sendResponseChannel!.GetAsync();
+                await responseChannel.BasicPublishAsync(string.Empty, targetQueue, data);
+            });
     }
 }

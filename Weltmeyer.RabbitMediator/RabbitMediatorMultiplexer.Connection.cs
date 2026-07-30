@@ -161,16 +161,17 @@ internal partial class RabbitMediatorMultiplexer
             publisherConfirmationsEnabled: false,
             publisherConfirmationTrackingEnabled: false));
 
-        _sendMessageChannel = await CreateSendChannel();
-        _sendRequestChannel = await CreateSendChannel();
-        _sendResponseChannel = await CreateSendChannel();
+        _sendMessageChannel = new PublishChannel(CreateSendChannel);
+        _sendRequestChannel = new PublishChannel(CreateSendChannel);
+        _sendResponseChannel = new PublishChannel(CreateSendChannel);
+        _topologyChannel = new PublishChannel(CreateAckChannel);
 
         _receiveMessageChannel = await CreateReceiveChannel();
         _receiveRequestChannel = await CreateReceiveChannel();
         _receiveResponseChannel = await CreateReceiveChannel();
 
         _receiveAckChannel = await CreateAckChannel();
-        _sendAckChannel = await CreateAckChannel();
+        _sendAckChannel = new PublishChannel(CreateAckChannel);
     }
 
     /// <summary>

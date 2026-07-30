@@ -45,6 +45,7 @@ internal partial class RabbitMediatorMultiplexer
         var useTimeout = responseTimeOut ?? configuration.Configuration.DefaultResponseTimeOut;
         try
         {
+            await EnsureSendExchange(exchangeName, ExchangeTypeFor(request), cancellationToken);
             activity?.Enrich(request);
             await _serializerHelper.Serialize(request, async data =>
             {
@@ -53,7 +54,8 @@ internal partial class RabbitMediatorMultiplexer
                     Expiration = Convert.ToInt64(useTimeout.TotalMilliseconds).ToString()
                 };
 
-                await _sendRequestChannel!.BasicPublishAsync(exchangeName, routingKey, true, props, data,
+                var requestChannel = await _sendRequestChannel!.GetAsync(cancellationToken);
+                await requestChannel.BasicPublishAsync(exchangeName, routingKey, true, props, data,
                     cancellationToken);
             });
         }
@@ -134,10 +136,12 @@ internal partial class RabbitMediatorMultiplexer
                 _targetAckWaiters.TryAdd(targetAckAwaiter.CorrelationId, targetAckAwaiter);
             }
 
+            await EnsureSendExchange(exchangeName, ExchangeTypeFor(message), cancellationToken);
             activity?.Enrich(message);
             await _serializerHelper.Serialize(message, async data =>
             {
-                await _sendMessageChannel!.BasicPublishAsync(exchangeName, routingKey, confirmPublish, props, data,
+                var messageChannel = await _sendMessageChannel!.GetAsync(cancellationToken);
+                await messageChannel.BasicPublishAsync(exchangeName, routingKey, confirmPublish, props, data,
                     cancellationToken);
             });
 
@@ -193,6 +197,31 @@ internal partial class RabbitMediatorMultiplexer
             tm.TargetInstance.InstanceScope),
         _ => throw new ArgumentException("Invalid message type")
     };
+
+    private static string ExchangeTypeFor(ISentObject sentObject) => sentObject switch
+    {
+        IBroadCastSentObject => ExchangeType.Fanout,
+        _ => ExchangeType.Direct
+    };
+
+    /// <summary>
+    /// Declares the exchange we are about to publish to, with the same arguments the receiving side uses.
+    /// Publishing to an exchange that does not exist is a channel-level error: the broker closes the channel
+    /// and the client does not bring it back, so one message of a type nobody consumes anywhere used to break
+    /// every later publish on that connection. Declaring first turns that case into a plain unroutable
+    /// message, which is what SendFailure is for.
+    /// </summary>
+    private async Task EnsureSendExchange(string exchangeName, string exchangeType,
+        CancellationToken cancellationToken)
+    {
+        if (_declaredSendExchanges.ContainsKey(exchangeName))
+            return;
+
+        var topologyChannel = await _topologyChannel!.GetAsync(cancellationToken);
+        await topologyChannel.ExchangeDeclareAsync(exchangeName, exchangeType, durable: false, autoDelete: false,
+            cancellationToken: cancellationToken);
+        _declaredSendExchanges.TryAdd(exchangeName, true);
+    }
 
     private static string ExchangeNameFor(ISentObject sentObject, string typeName) => sentObject switch
     {

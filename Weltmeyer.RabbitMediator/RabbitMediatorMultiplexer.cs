@@ -31,16 +31,22 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
     private IConnection? _connection;
 
-    private IChannel? _sendMessageChannel;
-    private IChannel? _sendRequestChannel;
-    private IChannel? _sendResponseChannel;
+    private PublishChannel? _sendMessageChannel;
+    private PublishChannel? _sendRequestChannel;
+    private PublishChannel? _sendResponseChannel;
+
+    /// <summary>Declares exchanges for the publish side. Separate so a failed declare cannot kill a send channel.</summary>
+    private PublishChannel? _topologyChannel;
 
     private IChannel? _receiveMessageChannel;
     private IChannel? _receiveRequestChannel;
     private IChannel? _receiveResponseChannel;
 
     private IChannel? _receiveAckChannel;
-    private IChannel? _sendAckChannel;
+    private PublishChannel? _sendAckChannel;
+
+    /// <summary>Exchanges this multiplexer already declared from the publish side.</summary>
+    private readonly ConcurrentDictionary<string, bool> _declaredSendExchanges = new();
 
     private readonly ConcurrentDictionary<Guid, TargetAckAwaiter> _targetAckWaiters = new();
     private readonly ConcurrentDictionary<Guid, RequestResponseAwaiter> _responseWaiters = new();
@@ -216,10 +222,19 @@ internal partial class RabbitMediatorMultiplexer : IAsyncDisposable, IDisposable
 
         // Channels before the connection: disposing the connection first closes them underneath, so their own
         // dispose then runs against a dead connection.
+        foreach (var publishChannel in new[]
+                 {
+                     _sendMessageChannel, _sendRequestChannel, _sendResponseChannel, _sendAckChannel,
+                     _topologyChannel
+                 })
+        {
+            if (publishChannel != null)
+                await publishChannel.DisposeAsync();
+        }
+
         foreach (var channel in new[]
                  {
-                     _sendMessageChannel, _sendRequestChannel, _sendResponseChannel, _receiveMessageChannel,
-                     _receiveRequestChannel, _receiveResponseChannel, _receiveAckChannel, _sendAckChannel
+                     _receiveMessageChannel, _receiveRequestChannel, _receiveResponseChannel, _receiveAckChannel
                  })
         {
             if (channel != null)
