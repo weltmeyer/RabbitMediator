@@ -48,6 +48,7 @@ public class TestScoped
         await app.StopAsync();
     }
     
+    [Fact]
     public async Task TestScopedKeyed()
     {
         var builder = Host.CreateApplicationBuilder();
