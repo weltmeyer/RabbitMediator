@@ -17,27 +17,37 @@ public static class ExtensionMethods
 
         var lifeTime = configuration.ServiceLifetime;
 
-        if (!serviceCollection.Any(sd =>
-                sd.ServiceType == typeof(RabbitMediatorMultiplexer) &&
+        // Two registrations under the same key used to leave the second one shadowed: the multiplexer of the
+        // first was reused, so its connection string and settings won, while resolving IRabbitMediator handed
+        // back whichever descriptor came last. Say so instead of picking one silently.
+        if (serviceCollection.Any(sd =>
+                sd.ServiceType == typeof(IRabbitMediator) &&
                 sd.IsKeyedService == (configuration.ServiceKey != null) &&
-                sd.ServiceKey == configuration.ServiceKey && sd.Lifetime == lifeTime))
+                Equals(sd.IsKeyedService ? sd.ServiceKey : null, configuration.ServiceKey)))
         {
-            var multiplexerDescriptor = new ServiceDescriptor(typeof(RabbitMediatorMultiplexer),
-                configuration.ServiceKey,
-                (provider, key) =>
-                {
-                    var result = new RabbitMediatorMultiplexer(configuration.ConnectionString,
-                        consumerDispatchConcurrency: configuration.ConsumerDispatchConcurrency,
-                        logger: provider.GetRequiredService<ILogger<RabbitMediatorMultiplexer>>(),
-                        prefetchCount: configuration.PrefetchCount);
-                    var workerConfiguration =
-                        provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
-                    workerConfiguration.Value.PleaseConfigureMultiplexers.Writer.TryWrite(result);
-                    return result;
-                }, lifeTime);
-
-            serviceCollection.Add(multiplexerDescriptor);
+            throw new ArgumentException(
+                configuration.ServiceKey == null
+                    ? "A RabbitMediator without a service key is already registered. Give one of them a " +
+                      $"{nameof(RabbitMediatorConfiguration.ServiceKey)} to run several mediators side by side."
+                    : $"A RabbitMediator with the service key '{configuration.ServiceKey}' is already registered.",
+                nameof(RabbitMediatorConfiguration.ServiceKey));
         }
+
+        var multiplexerDescriptor = new ServiceDescriptor(typeof(RabbitMediatorMultiplexer),
+            configuration.ServiceKey,
+            (provider, key) =>
+            {
+                var result = new RabbitMediatorMultiplexer(configuration.ConnectionString,
+                    consumerDispatchConcurrency: configuration.ConsumerDispatchConcurrency,
+                    logger: provider.GetRequiredService<ILogger<RabbitMediatorMultiplexer>>(),
+                    prefetchCount: configuration.PrefetchCount);
+                var workerConfiguration =
+                    provider.GetRequiredService<IOptions<RabbitMediatorWorkerConfiguration>>();
+                workerConfiguration.Value.PleaseConfigureMultiplexers.Writer.TryWrite(result);
+                return result;
+            }, lifeTime);
+
+        serviceCollection.Add(multiplexerDescriptor);
 
 
         var instanceDescriptor = new ServiceDescriptor(typeof(IRabbitMediator), configuration.ServiceKey,

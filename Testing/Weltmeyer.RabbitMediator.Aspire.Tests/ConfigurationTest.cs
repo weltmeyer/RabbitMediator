@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Weltmeyer.RabbitMediator.TestTool.Consumers;
 
@@ -106,6 +107,56 @@ public class ConfigurationTest
         var multiplexer = testApp.Services.GetRequiredService<RabbitMediatorMultiplexer>();
         Assert.Equal(3, multiplexer.ConsumerDispatchConcurrency);
         Assert.Equal(7, multiplexer.PrefetchCount);
+    }
+
+    /// <summary>
+    /// Registering the same key twice used to shadow the second registration: its connection string and
+    /// settings were dropped in favour of the first multiplexer.
+    /// </summary>
+    [Fact]
+    void RegisteringTheSameServiceKeyTwiceThrows()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddRabbitMediator(cfg =>
+        {
+            cfg.ConnectionString = "amqp://unused";
+            cfg.ServiceKey = "duplicate";
+        });
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            builder.Services.AddRabbitMediator(cfg =>
+            {
+                cfg.ConnectionString = "amqp://other";
+                cfg.ServiceKey = "duplicate";
+            }));
+        Assert.Contains("duplicate", exception.Message);
+    }
+
+    [Fact]
+    void RegisteringWithoutServiceKeyTwiceThrows()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddRabbitMediator(cfg => cfg.ConnectionString = "amqp://unused");
+
+        Assert.Throws<ArgumentException>(() =>
+            builder.Services.AddRabbitMediator(cfg => cfg.ConnectionString = "amqp://other"));
+    }
+
+    [Fact]
+    void RegisteringDifferentServiceKeysIsFine()
+    {
+        var builder = Host.CreateApplicationBuilder();
+
+        builder.Services.AddRabbitMediator(cfg =>
+        {
+            cfg.ConnectionString = "amqp://unused";
+            cfg.ServiceKey = "first";
+        });
+        builder.Services.AddRabbitMediator(cfg =>
+        {
+            cfg.ConnectionString = "amqp://unused";
+            cfg.ServiceKey = "second";
+        });
     }
 
     [Fact]
