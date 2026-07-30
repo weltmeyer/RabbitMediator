@@ -8,11 +8,3 @@ public interface IRequestConsumer<in TRequest, TResponse> : IConsumer
 {
     public Task<TResponse> Consume(TRequest message);
 }
-
-/*
-public interface IRequestConsumer2<TResponse> : IConsumer
-
-    where TResponse : Response
-{
-    public Task<Response> Consume( Request<TResponse> message);
-}*/

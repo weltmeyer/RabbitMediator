@@ -1,7 +1,4 @@
-using System.Reflection;
-using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -84,21 +81,4 @@ public static class ExtensionMethods
     {
         serviceCollection.AddOpenTelemetry().WithTracing(t => t.AddSource(Telemetry.ActivitySource.Name));
     }
-}
-
-internal class RabbitMediatorWorkerConfiguration
-{
-    public readonly Channel<RabbitMediatorMultiplexer> PleaseConfigureMultiplexers =
-        Channel.CreateUnbounded<RabbitMediatorMultiplexer>();
-
-    public readonly Channel<RabbitMediator> PleaseConfigureMediators =
-        Channel.CreateUnbounded<RabbitMediator>();
-
-    /// <summary>
-    /// Every mediator registered via <see cref="ExtensionMethods.AddRabbitMediator"/> (its DI service key and
-    /// lifetime). The hosted worker eagerly resolves the singleton ones at startup so their consumer
-    /// exchanges/queues are declared even if application code never resolves the mediator itself.
-    /// </summary>
-    public readonly System.Collections.Concurrent.ConcurrentBag<(object? serviceKey, ServiceLifetime lifetime)>
-        RegisteredMediators = new();
 }

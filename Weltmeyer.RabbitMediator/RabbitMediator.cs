@@ -1,7 +1,3 @@
-using System.Collections.Concurrent;
-using Microsoft.Extensions.DependencyInjection;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
 using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
@@ -66,25 +62,19 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
 
     public T? GetConsumerInstance<T>() where T : IConsumer
     {
-        //var consumer = this._consumers.Values.FirstOrDefault(k => k.GetType() == typeof(T));
         var consumer = GetConsumer(typeof(T));
         return (T?)consumer;
     }
 
-
-    private readonly ConcurrentDictionary<string, IConsumer> _consumers = new();
-
     public IConsumer? GetConsumer(Type consumerType)
     {
-        return this._multiplexer.GetConsumer(this,consumerType);
+        return this._multiplexer.GetConsumer(this, consumerType);
     }
 
     public string ScopeId { get; } = GenerateId();
 
-
-
     private readonly RabbitMediatorMultiplexer _multiplexer;
-    
+
 
     internal bool Disposed;
 
@@ -121,11 +111,6 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
         Disposed = true;
 
         await _multiplexer.DisposeRabbitMediatorConnection(this);
-        
-
-        return;
-
-      
     }
 
     public void Dispose()

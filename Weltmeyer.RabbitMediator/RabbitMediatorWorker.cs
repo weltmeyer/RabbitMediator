@@ -22,23 +22,6 @@ internal class RabbitMediatorWorker(
     public Task StartingAsync(CancellationToken cancellationToken)
     {
         var optionsInst = options.Value;
-        /*foreach (var instanceKey in optionsInst.KeyListNormalMediators)
-        {
-            var iMediator = instanceKey == null
-                ? serviceProvider.GetRequiredService<IRabbitMediator>()
-                : serviceProvider.GetRequiredKeyedService<IRabbitMediator>(instanceKey);
-            var mediator = iMediator as RabbitMediator;
-            await mediator!.ConfigureBus(serviceProvider);
-        }*/
-
-       /* foreach (var instanceKey in optionsInst.KeyListMediatorMultiPlexer)
-        {
-            var iMediator = instanceKey == null
-                ? serviceProvider.GetRequiredService<RabbitMediatorMultiplexer>()
-                : serviceProvider.GetRequiredKeyedService<RabbitMediatorMultiplexer>(instanceKey);
-            var mediator = iMediator as RabbitMediatorMultiplexer;
-            await mediator!.Configure();
-        }*/
 
         _ = Task.Run(WorkOnMultiplexed);
         _ = Task.Run(WorkOnMultiplexer);

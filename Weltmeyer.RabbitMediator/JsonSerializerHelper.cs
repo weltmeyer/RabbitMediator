@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Diagnostics;
 using System.Text.Json;
 using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
@@ -57,41 +56,7 @@ internal class JsonSerializerHelper
         {
             //this looks strange but is needed for the polymorphic $type setting in the json
             await AddTypeIfMissing(objectToSerialize.GetType());
-            try
-            {
-                /*   if (_options.TryGetTypeInfo(typeof(ISentObject), out var typeInfo))
-                   {
-                       if (typeInfo.PolymorphismOptions?.DerivedTypes.All(dt =>
-                               dt.DerivedType != objectToSerialize.GetType()) ?? true)
-                       {
-                           Debugger.Break();
-                       }
-                   }
-                   else
-                   {
-                       Debugger.Break();
-                   }*/
-
-                await JsonSerializer.SerializeAsync(stream, sentObject, _options);
-            }
-            catch (NotSupportedException)
-            {
-                try
-                {
-                    //retry non async.. i cant find the reason why this fails in async SOMETIMES
-                    JsonSerializer.Serialize(stream, sentObject, _options);
-                }
-                catch (Exception)
-                {
-                    if (Debugger.IsAttached)
-                        Debugger.Break();
-                    throw;
-                }
-
-                if (Debugger.IsAttached)
-                    Debugger.Break();
-                throw;
-            }
+            await JsonSerializer.SerializeAsync(stream, sentObject, _options);
         }
         else
         {
