@@ -11,18 +11,20 @@ namespace Weltmeyer.RabbitMediator;
 internal partial class RabbitMediatorMultiplexer
 {
     internal async Task<TResponse> Request<TResponse>(RabbitMediator rabbitMediator,
-        Request<TResponse> request, TimeSpan? responseTimeOut, bool throwOnFailure)
+        Request<TResponse> request, TimeSpan? responseTimeOut, bool throwOnFailure,
+        CancellationToken cancellationToken = default)
         where TResponse : Response
     {
         using var activity = Telemetry.ActivitySource.StartActivity(ActivityKind.Producer);
         if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
+        cancellationToken.ThrowIfCancellationRequested();
         GuardTargetIsSet(request);
 
         var configuration = GetConfiguration(rabbitMediator);
 
-        await EnsureReceiver(rabbitMediator, typeof(TResponse));
+        await EnsureReceiver(rabbitMediator, typeof(TResponse), cancellationToken);
 
         var typeName = RabbitNaming.TypeName(request.GetType());
         var routingKey = RoutingKeyFor(request);
@@ -51,7 +53,8 @@ internal partial class RabbitMediatorMultiplexer
                     Expiration = Convert.ToInt64(useTimeout.TotalMilliseconds).ToString()
                 };
 
-                await _sendRequestChannel!.BasicPublishAsync(exchangeName, routingKey, true, props, data);
+                await _sendRequestChannel!.BasicPublishAsync(exchangeName, routingKey, true, props, data,
+                    cancellationToken);
             });
         }
         catch (RabbitMQClientException rabbitException)
@@ -64,9 +67,17 @@ internal partial class RabbitMediatorMultiplexer
                 sendFailure: true);
         }
 
-        var timeOutTask = Task.Delay(useTimeout);
+        var timeOutTask = Task.Delay(useTimeout, cancellationToken);
         var responseWaitTask = awaiter.TaskCompletionSource.Task;
         var waitResult = await Task.WhenAny(timeOutTask, responseWaitTask);
+        if (cancellationToken.IsCancellationRequested && waitResult != responseWaitTask)
+        {
+            // The caller gave up on us. Both Request and TryRequest surface that as the cancellation it is -
+            // TryRequest only promises not to throw for a timeout or a failed publish.
+            _responseWaiters.TryRemove(awaiter.CorrelationId, out _);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         if (waitResult == responseWaitTask)
         {
             await responseWaitTask;
@@ -86,13 +97,15 @@ internal partial class RabbitMediatorMultiplexer
     }
 
     internal async Task<SendResult> Send<TMessageType>(RabbitMediator rabbitMediator,
-        TMessageType message, bool confirmPublish, TimeSpan? confirmTimeOut)
+        TMessageType message, bool confirmPublish, TimeSpan? confirmTimeOut,
+        CancellationToken cancellationToken = default)
         where TMessageType : Message
     {
         using var activity = Telemetry.ActivitySource.StartActivity(ActivityKind.Producer);
         if (rabbitMediator.Disposed)
             throw new ObjectDisposedException(nameof(IRabbitMediator));
 
+        cancellationToken.ThrowIfCancellationRequested();
         GuardTargetIsSet(message);
 
         // The runtime type decides, not TMessageType: a message handed over through a base-typed variable
@@ -124,15 +137,23 @@ internal partial class RabbitMediatorMultiplexer
             activity?.Enrich(message);
             await _serializerHelper.Serialize(message, async data =>
             {
-                await _sendMessageChannel!.BasicPublishAsync(exchangeName, routingKey, confirmPublish, props, data);
+                await _sendMessageChannel!.BasicPublishAsync(exchangeName, routingKey, confirmPublish, props, data,
+                    cancellationToken);
             });
 
             if (confirmPublish)
             {
                 var configuration = GetConfiguration(rabbitMediator);
-                var timeOutTask = Task.Delay(confirmTimeOut ?? configuration.Configuration.DefaultConfirmTimeOut);
+                var timeOutTask = Task.Delay(confirmTimeOut ?? configuration.Configuration.DefaultConfirmTimeOut,
+                    cancellationToken);
                 var ackMsgTask = targetAckAwaiter!.TaskCompletionSource.Task;
                 var waitResult = await Task.WhenAny(timeOutTask, ackMsgTask);
+                if (cancellationToken.IsCancellationRequested && waitResult != ackMsgTask)
+                {
+                    _targetAckWaiters.TryRemove(message.CorrelationId, out _);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
                 if (waitResult == ackMsgTask)
                 {
                     var ackMsg = await ackMsgTask;

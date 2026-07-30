@@ -27,41 +27,45 @@ internal class RabbitMediator : IRabbitMediator, IAsyncDisposable, IDisposable
     public string InstanceId => _multiplexer.InstanceId;
 
 
-    public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
+    public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null,
+        CancellationToken cancellationToken = default)
         where TRequest : Request<TResponse> where TResponse : Response
     {
         await EnsureConfigured();
         return await this._multiplexer.Request(this, request,
-            responseTimeOut, throwOnFailure: true);
+            responseTimeOut, throwOnFailure: true, cancellationToken);
     }
 
-    public async Task<TResponse> Request<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null) where TResponse : Response
+    public async Task<TResponse> Request<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null,
+        CancellationToken cancellationToken = default) where TResponse : Response
     {
         await EnsureConfigured();
         return await this._multiplexer.Request(this, request,
-            responseTimeOut, throwOnFailure: true);
+            responseTimeOut, throwOnFailure: true, cancellationToken);
     }
 
-    public async Task<TResponse> TryRequest<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null)
+    public async Task<TResponse> TryRequest<TRequest, TResponse>(TRequest request, TimeSpan? responseTimeOut = null,
+        CancellationToken cancellationToken = default)
         where TRequest : Request<TResponse> where TResponse : Response
     {
         await EnsureConfigured();
         return await this._multiplexer.Request(this, request,
-            responseTimeOut, throwOnFailure: false);
+            responseTimeOut, throwOnFailure: false, cancellationToken);
     }
 
-    public async Task<TResponse> TryRequest<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null) where TResponse : Response
+    public async Task<TResponse> TryRequest<TResponse>(Request<TResponse> request, TimeSpan? responseTimeOut = null,
+        CancellationToken cancellationToken = default) where TResponse : Response
     {
         await EnsureConfigured();
         return await this._multiplexer.Request(this, request,
-            responseTimeOut, throwOnFailure: false);
+            responseTimeOut, throwOnFailure: false, cancellationToken);
     }
 
     public async Task<SendResult> Send<TMessageType>(TMessageType message, bool confirmPublish = true,
-        TimeSpan? confirmTimeOut = null) where TMessageType : Message
+        TimeSpan? confirmTimeOut = null, CancellationToken cancellationToken = default) where TMessageType : Message
     {
         await EnsureConfigured();
-        return await this._multiplexer.Send(this, message, confirmPublish, confirmTimeOut);
+        return await this._multiplexer.Send(this, message, confirmPublish, confirmTimeOut, cancellationToken);
     }
 
     public T? GetConsumerInstance<T>() where T : IConsumer

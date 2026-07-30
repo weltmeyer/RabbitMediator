@@ -18,7 +18,8 @@ internal partial class RabbitMediatorMultiplexer
     /// Declares exchange, queue and binding for one sent-object type of one mediator and starts consuming.
     /// Idempotent per mediator and type; returns once the broker confirmed the consumer registration.
     /// </summary>
-    private async Task EnsureReceiver(RabbitMediator mediatorT, Type sentObjectType)
+    private async Task EnsureReceiver(RabbitMediator mediatorT, Type sentObjectType,
+        CancellationToken cancellationToken = default)
     {
         if (mediatorT.Disposed)
             return;
@@ -30,7 +31,7 @@ internal partial class RabbitMediatorMultiplexer
         if (configuration.RegisteredConsumerTypes.ContainsKey(sentObjectType))
             return;
 
-        await configuration.EnsureReceiverSemaphore.WaitAsync();
+        await configuration.EnsureReceiverSemaphore.WaitAsync(cancellationToken);
         try
         {
             if (configuration.RegisteredConsumerTypes.ContainsKey(sentObjectType))
@@ -40,8 +41,8 @@ internal partial class RabbitMediatorMultiplexer
             var (useChannel, inputQueuePrefix) = ReceiveChannelFor(sentObjectType);
             await _serializerHelper.AddTypeIfMissing(sentObjectType);
 
-            var (exchangeName, queueName) =
-                await DeclareReceiveTopology(configuration, sentObjectType, typeName, useChannel, inputQueuePrefix);
+            var (exchangeName, queueName) = await DeclareReceiveTopology(configuration, sentObjectType, typeName,
+                useChannel, inputQueuePrefix, cancellationToken);
 
             var consumer = new AsyncEventingBasicConsumer(useChannel);
             consumer.ReceivedAsync += async (obj, args) =>
@@ -83,7 +84,7 @@ internal partial class RabbitMediatorMultiplexer
             };
 
             var consumerTag = RabbitNaming.ConsumerTag(exchangeName, InstanceId, configuration.RabbitMediator.ScopeId);
-            _ = await useChannel.BasicConsumeAsync(queueName, false, consumerTag, consumer);
+            _ = await useChannel.BasicConsumeAsync(queueName, false, consumerTag, consumer, cancellationToken);
 
             await registeredSem.WaitAsync();
 
@@ -113,21 +114,22 @@ internal partial class RabbitMediatorMultiplexer
     /// </summary>
     private async Task<(string exchangeName, string queueName)> DeclareReceiveTopology(
         RabbitMultiplexerMediatorConfiguration configuration, Type sentObjectType, string typeName, IChannel useChannel,
-        string inputQueuePrefix)
+        string inputQueuePrefix, CancellationToken cancellationToken = default)
     {
         var scopeId = configuration.RabbitMediator.ScopeId;
 
         if (sentObjectType.IsAssignableTo(typeof(ITargetedSentObject)))
         {
             var exchangeName = RabbitNaming.TargetedExchange(typeName);
-            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false);
+            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false,
+                cancellationToken: cancellationToken);
             var queue = await useChannel.QueueDeclareAsync(
                 RabbitNaming.InputQueue(inputQueuePrefix, typeName, InstanceId, scopeId),
                 durable: false, exclusive: true,
-                autoDelete: true);
+                autoDelete: true, cancellationToken: cancellationToken);
             configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
             await useChannel.QueueBindAsync(queue.QueueName, exchangeName,
-                RabbitNaming.InstanceRoutingKey(InstanceId, scopeId));
+                RabbitNaming.InstanceRoutingKey(InstanceId, scopeId), cancellationToken: cancellationToken);
             configuration.QueueToExchangeBindings.TryAdd(queue.QueueName, (exchangeName, ExchangeType.Direct));
             return (exchangeName, queue.QueueName);
         }
@@ -135,13 +137,15 @@ internal partial class RabbitMediatorMultiplexer
         if (sentObjectType.IsAssignableTo(typeof(IBroadCastSentObject)))
         {
             var exchangeName = RabbitNaming.BroadcastExchange(typeName);
-            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Fanout, false, false);
+            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Fanout, false, false,
+                cancellationToken: cancellationToken);
             var queue = await useChannel.QueueDeclareAsync(
                 RabbitNaming.InputQueue(inputQueuePrefix, typeName, InstanceId, scopeId),
                 durable: false, exclusive: true,
-                autoDelete: false);
+                autoDelete: false, cancellationToken: cancellationToken);
             configuration.OwnedQueues.TryAdd(queue.QueueName, useChannel);
-            await useChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.BroadcastRoutingKey);
+            await useChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.BroadcastRoutingKey,
+                cancellationToken: cancellationToken);
             configuration.QueueToExchangeBindings.TryAdd(queue.QueueName, (exchangeName, ExchangeType.Fanout));
             return (exchangeName, queue.QueueName);
         }
@@ -149,13 +153,15 @@ internal partial class RabbitMediatorMultiplexer
         if (sentObjectType.IsAssignableTo(typeof(IAnyTargetedSentObject)))
         {
             var exchangeName = RabbitNaming.AnyTargetedExchange(typeName);
-            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false);
+            await useChannel.ExchangeDeclareAsync(exchangeName, ExchangeType.Direct, false, false,
+                cancellationToken: cancellationToken);
             var queue = await useChannel.QueueDeclareAsync(
                 RabbitNaming.SharedQueue(typeName),
                 durable: false,
                 exclusive: false,
-                autoDelete: false);
-            await useChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.AnyTargetedRoutingKey);
+                autoDelete: false, cancellationToken: cancellationToken);
+            await useChannel.QueueBindAsync(queue.QueueName, exchangeName, RabbitNaming.AnyTargetedRoutingKey,
+                cancellationToken: cancellationToken);
             configuration.QueueToExchangeBindings.TryAdd(queue.QueueName, (exchangeName, ExchangeType.Direct));
             return (exchangeName, queue.QueueName);
         }
