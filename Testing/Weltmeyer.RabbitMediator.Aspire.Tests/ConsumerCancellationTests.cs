@@ -12,16 +12,16 @@ public class SlowResponse : Response
 
 public class SlowRequest : TargetedRequest<SlowResponse>;
 
-/// <summary>Waits for the token, so the test can see when the mediator cancels it.</summary>
+/// <summary>
+/// Waits for the token, so the test can see when the mediator cancels it. Implements only the cancellable
+/// overload - the other one is obsolete and has a default, so it does not have to be written out any more.
+/// </summary>
 public class SlowRequestConsumer : IRequestConsumer<SlowRequest, SlowResponse>
 {
     public static readonly TaskCompletionSource<TimeSpan> Cancelled =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public static int Invocations;
-
-    public Task<SlowResponse> Consume(SlowRequest message) =>
-        throw new InvalidOperationException("the cancellable overload should have been called");
 
     public async Task<SlowResponse> Consume(SlowRequest message, CancellationToken cancellationToken)
     {
@@ -48,11 +48,13 @@ public class PatientRequest : TargetedRequest<PatientResponse>;
 /// <summary>Never looks at the token - the old style of consumer, which has to keep working.</summary>
 public class PatientRequestConsumer : IRequestConsumer<PatientRequest, PatientResponse>
 {
+#pragma warning disable CS0618 // deliberately the obsolete overload: it has to keep working
     public async Task<PatientResponse> Consume(PatientRequest message)
     {
         await Task.Delay(TimeSpan.FromMilliseconds(200));
         return new PatientResponse();
     }
+#pragma warning restore CS0618
 }
 
 public class BusyResponse : Response;
@@ -64,12 +66,14 @@ public class BusyRequestConsumer : IRequestConsumer<BusyRequest, BusyResponse>
 {
     public static int Invocations;
 
+#pragma warning disable CS0618 // deliberately the obsolete overload, so the token cannot end the work early
     public async Task<BusyResponse> Consume(BusyRequest message)
     {
         Interlocked.Increment(ref Invocations);
         await Task.Delay(TimeSpan.FromSeconds(3));
         return new BusyResponse();
     }
+#pragma warning restore CS0618
 }
 
 [Collection("AspireHostCollection")]

@@ -4,6 +4,9 @@ using Weltmeyer.RabbitMediator.TestTool.Consumers;
 
 namespace Weltmeyer.RabbitMediator.Aspire.Tests;
 
+/// <summary>Implements the interface but neither of its Consume overloads.</summary>
+public class EmptyRequestConsumer : Contracts.ConsumerBases.IRequestConsumer<PatientRequest, PatientResponse>;
+
 [Collection("AspireHostCollection")]
 public class ConfigurationTest
 {
@@ -186,6 +189,19 @@ public class ConfigurationTest
         var cfg = new RabbitMediatorConfiguration { ConsumerDispatchConcurrency = 10, PrefetchCount = 0 };
 
         cfg.Validate();
+    }
+
+    /// <summary>
+    /// Both Consume overloads have default implementations now, so a consumer implementing neither compiles.
+    /// It has to be caught when it is registered rather than when the first request arrives.
+    /// </summary>
+    [Fact]
+    void ConfigInvalid_ConsumerImplementsNoConsumeOverload()
+    {
+        var cfg = new RabbitMediatorConfiguration { ConsumerTypes = [typeof(EmptyRequestConsumer)] };
+
+        var exception = Assert.Throws<ArgumentException>(() => cfg.Validate());
+        Assert.Contains(nameof(EmptyRequestConsumer), exception.Message);
     }
 
     [Fact]

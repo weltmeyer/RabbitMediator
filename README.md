@@ -51,7 +51,8 @@ public class MyConsumer : IMessageConsumer<MyMessage>, IRequestConsumer<MyReques
 {
     public Task Consume(MyMessage message) => Task.CompletedTask;
 
-    public Task<MyResponse> Consume(MyRequest request) => Task.FromResult(new MyResponse());
+    public Task<MyResponse> Consume(MyRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(new MyResponse());
 }
 ```
 
@@ -131,20 +132,21 @@ on its own clock, so the hosts do not need to agree about the time - and:
 ```csharp
 public class SnapshotConsumer : IRequestConsumer<TakeSnapshotRequest, TakeSnapshotResponse>
 {
-    //implement this overload to be told when the sender has stopped waiting
     public async Task<TakeSnapshotResponse> Consume(TakeSnapshotRequest request, CancellationToken cancellationToken)
     {
         var snapshot = await _camera.Capture(cancellationToken);
         return new TakeSnapshotResponse { Snapshot = snapshot };
     }
-
-    public Task<TakeSnapshotResponse> Consume(TakeSnapshotRequest request) => Consume(request, CancellationToken.None);
 }
 ```
 
-Implementing only `Consume(TRequest)` keeps working; it just never learns that the sender
-gave up. Cancellation is cooperative - work that does not look at the token runs to its end
-either way. The token is also cancelled when the channel or the mediator shuts down.
+The overload without the token is obsolete but still works, so existing consumers need no
+change - they just never learn that the sender gave up. Both overloads have a default
+implementation, which is what lets a consumer implement whichever one it wants; implementing
+neither is caught when the consumer is registered, not when the first request arrives.
+
+Cancellation is cooperative - work that does not look at the token runs to its end either
+way. The token is also cancelled when the channel or the mediator shuts down.
 
 ### Telemetry ###
 

@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Weltmeyer.RabbitMediator.Contracts.ConsumerBases;
+using Weltmeyer.RabbitMediator.Contracts.MessageBases;
 
 namespace Weltmeyer.RabbitMediator;
 
@@ -74,6 +75,25 @@ public class RabbitMediatorConfiguration
 
 
     /// <summary>
+    /// Whether the consumer class brings its own Consume, rather than leaving both of the interface's default
+    /// implementations in place - the one forwards to the other, so neither would ever do any work.
+    /// </summary>
+    private static bool ImplementsAnyConsumeOverload(Type consumerType, Type consumerInterface)
+    {
+        var interfaceMap = consumerType.GetInterfaceMap(consumerInterface);
+        for (var i = 0; i < interfaceMap.InterfaceMethods.Length; i++)
+        {
+            if (interfaceMap.InterfaceMethods[i].Name !=
+                nameof(IRequestConsumer<Request<Response>, Response>.Consume))
+                continue;
+            if (interfaceMap.TargetMethods[i].DeclaringType != consumerInterface)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Validates the Configuration and throws an ArgumentException if it is not valid.
     /// </summary>
     /// <exception cref="ArgumentException"></exception>
@@ -115,6 +135,13 @@ public class RabbitMediatorConfiguration
                 var requestType = requestConsumerInterface.GetGenericArguments()[0];
                 if (!registeredSentObjectTypes.Add(requestType))
                     throw new ArgumentException("Only one consumer per sentobject type is allowed!");
+
+                if (!ImplementsAnyConsumeOverload(consumerType, requestConsumerInterface))
+                    throw new ArgumentException(
+                        $"{consumerType.FullName} consumes {requestType.FullName} but implements neither Consume " +
+                        "overload. Both have default implementations so that either one may be chosen, which " +
+                        "means choosing none compiles and would only fail once a request arrives.",
+                        nameof(ConsumerTypes));
             }
         }
     }
